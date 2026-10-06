@@ -3,3 +3,4 @@ psycopg[binary]>=3.2,<4
 pymongo>=4.10,<5
 python-dotenv>=1,<2
 scikit-learn>=1.5,<2
+yfinance>=0.2,<1

@@ -3,21 +3,24 @@ from datetime import datetime, timezone
 import uuid
 
 from midas_core.domain.features import SUPPORTED_HORIZONS, build_samples, month_end_series
-from midas_core.infrastructure.brapi import SOURCE
 from midas_core.infrastructure.repositories import MongoRepository, PostgresRepository
 
-def publish_dataset(horizons=(12,), mongo_repository=None, postgres_repository=None):
+def publish_dataset(horizons=(12,), source=None, mongo_repository=None, postgres_repository=None):
     horizons = tuple(dict.fromkeys(horizons))
     if not horizons or any(value not in SUPPORTED_HORIZONS for value in horizons):
         raise ValueError("Horizontes aceitos: 12, 24 e 36 meses.")
     mongo_repository = mongo_repository or MongoRepository()
     postgres_repository = postgres_repository or PostgresRepository()
 
+    # Se não especificado, usa a fonte com mais dados
+    if source is None:
+        source = _best_source(postgres_repository)
+
     grouped = {}
-    for row in postgres_repository.training_prices(SOURCE):
+    for row in postgres_repository.training_prices(source):
         grouped.setdefault(row["ticker"], []).append(row)
     if not grouped:
-        raise ValueError("Não há cotações reais da brapi.dev no PostgreSQL.")
+        raise ValueError(f"Não há cotações da fonte {source} no PostgreSQL.")
 
     dataset_id = str(uuid.uuid4())
     created_at = datetime.now(timezone.utc)
@@ -42,7 +45,7 @@ def publish_dataset(horizons=(12,), mongo_repository=None, postgres_repository=N
         "_id": dataset_id,
         "name": "brapi-monthly-adjusted",
         "version": created_at.isoformat(),
-        "source": "brapi.dev:daily_prices.adjusted_close",
+        "source": f"{source}:daily_prices.adjusted_close",
         "is_demo": False,
         "created_at": created_at,
         "horizons": list(horizons),
@@ -51,3 +54,16 @@ def publish_dataset(horizons=(12,), mongo_repository=None, postgres_repository=N
     }
     mongo_repository.publish_dataset(metadata, samples)
     return dataset_id, len(samples)
+
+def _best_source(repository):
+    """Retorna a fonte com mais ativos cadastrados."""
+    with repository._connector() as connection:
+        result = connection.execute(
+            """SELECT source, COUNT(DISTINCT asset_id) as cnt
+               FROM daily_prices
+               WHERE source IN ('brapi.dev', 'yahoo.finance')
+               GROUP BY source
+               ORDER BY cnt DESC
+               LIMIT 1"""
+        ).fetchone()
+    return result["source"] if result else "brapi.dev"

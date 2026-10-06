@@ -4,6 +4,7 @@ from pathlib import Path
 
 from midas_core.application.datasets import publish_dataset
 from midas_core.application.market_import import import_stocks
+from midas_core.application.market_import_yahoo import import_stocks_yahoo
 from midas_core.application.training import train
 from midas_core.infrastructure.brapi import VALID_RANGES
 
@@ -32,12 +33,33 @@ def import_market_main():
         f"{result['prices']} cotação(ões), fonte {result['source']}."
     )
 
+def import_yahoo_main():
+    parser = argparse.ArgumentParser(description="Importa ações brasileiras do Yahoo Finance.")
+    parser.add_argument("tickers", nargs="*", help="Códigos da B3, por exemplo PETR4 VALE3")
+    parser.add_argument("--file", help="Arquivo com um ticker por linha")
+    parser.add_argument("--period", default="10y", help="Período (1y, 2y, 5y, 10y, max)")
+    arguments = parser.parse_args()
+    tickers = list(arguments.tickers)
+    if arguments.file:
+        tickers.extend(_tickers_from_file(arguments.file))
+    if not tickers:
+        parser.error("informe tickers ou use --file")
+    result = import_stocks_yahoo(tickers, arguments.period)
+    print(
+        f"Importação concluída: {result['assets']} ativo(s), "
+        f"{result['prices']} cotação(ões), fonte {result['source']}."
+    )
+    if "warnings" in result:
+        for warning in result["warnings"]:
+            print(f"Aviso: {warning}")
+
 def dataset_main():
     parser = argparse.ArgumentParser(description="Cria dataset mensal e treina o modelo do Midas.")
     parser.add_argument("--horizon", type=int, action="append", choices=(12, 24, 36))
+    parser.add_argument("--source", help="Fonte dos dados (brapi.dev, yahoo.finance). Padrão: automático")
     arguments = parser.parse_args()
     horizons = tuple(arguments.horizon or [12])
-    dataset_id, sample_count = publish_dataset(horizons)
+    dataset_id, sample_count = publish_dataset(horizons, source=arguments.source)
     print(f"Dataset publicado: {dataset_id} ({sample_count} amostras)")
     for horizon in horizons:
         print(f"Experimento {horizon} meses:", train(dataset_id, horizon))
