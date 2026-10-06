@@ -56,10 +56,11 @@ def import_yahoo_main():
 def dataset_main():
     parser = argparse.ArgumentParser(description="Cria dataset mensal e treina o modelo do Midas.")
     parser.add_argument("--horizon", type=int, action="append", choices=(6, 12, 24, 36))
-    parser.add_argument("--source", help="Fonte dos dados (brapi.dev, yahoo.finance). Padrão: automático")
+    parser.add_argument("--source", help="Fonte dos dados (brapi.dev, yahoo.finance, enriched, all). Padrão: all")
     arguments = parser.parse_args()
     horizons = tuple(arguments.horizon or [12])
-    dataset_id, sample_count = publish_dataset(horizons, source=arguments.source)
+    source = arguments.source or "all"
+    dataset_id, sample_count = publish_dataset(horizons, source=source)
     print(f"Dataset publicado: {dataset_id} ({sample_count} amostras)")
     for horizon in horizons:
         print(f"Experimento {horizon} meses:", train(dataset_id, horizon))

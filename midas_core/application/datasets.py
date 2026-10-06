@@ -16,19 +16,30 @@ def publish_dataset(horizons=(12,), source=None, tickers=None, mongo_repository=
     mongo_repository = mongo_repository or MongoRepository()
     postgres_repository = postgres_repository or PostgresRepository()
 
-    # Se não especificado, usa a fonte com mais dados
+    # Se não especificado, usa todas as fontes disponíveis
     if source is None:
-        source = _best_source(postgres_repository)
+        source = "all"
 
     grouped = {}
-    for row in postgres_repository.training_prices(source):
-        ticker = row["ticker"]
-        # Filtrar por tickers se especificado
-        if tickers and ticker not in tickers:
-            continue
-        grouped.setdefault(ticker, []).append(row)
+    if source == "all":
+        # Usar todas as fontes disponíveis
+        for src in ["enriched", "yahoo.finance", "brapi.dev"]:
+            for row in postgres_repository.training_prices(src):
+                ticker = row["ticker"]
+                if tickers and ticker not in tickers:
+                    continue
+                # Usar a primeira fonte encontrada para cada ticker
+                if ticker not in grouped:
+                    grouped[ticker] = []
+                grouped[ticker].append(row)
+    else:
+        for row in postgres_repository.training_prices(source):
+            ticker = row["ticker"]
+            if tickers and ticker not in tickers:
+                continue
+            grouped.setdefault(ticker, []).append(row)
     if not grouped:
-        raise ValueError(f"Não há cotações da fonte {source} no PostgreSQL.")
+        raise ValueError(f"Não há cotações disponíveis no PostgreSQL.")
 
     # Buscar fundamentos históricos para cada ticker
     fundamentals_cache = {}
