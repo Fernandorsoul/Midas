@@ -6,3 +6,4 @@ scikit-learn>=1.5,<2
 yfinance>=0.2,<1
 xgboost>=2.0,<3
 lightgbm>=4.0,<5
+tensorflow>=2.15,<3
