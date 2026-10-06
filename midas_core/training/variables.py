@@ -24,6 +24,15 @@ try:
 except Exception:  # pragma: no cover
     LGBMRegressor = None
 
+try:
+    import tensorflow as tf
+    from tensorflow import keras
+    from tensorflow.keras import layers
+except Exception:  # pragma: no cover
+    tf = None
+    keras = None
+    layers = None
+
 from midas_core.domain.features import FEATURE_NAMES
 from midas_core.domain.regression import (
     RidgeModel,
@@ -302,6 +311,9 @@ class VariableTrainer:
                             "lightgbm",
                             {"n_estimators": n_estimators, "max_depth": max_depth, "learning_rate": learning_rate},
                         ))
+        # Transformer candidate
+        if keras is not None:
+            candidates.append(ModelCandidate("transformer", {"epochs": 50, "batch_size": 32}))
         return candidates
 
     def _fit_candidate(self, features, targets, candidate):
@@ -310,15 +322,24 @@ class VariableTrainer:
         if not self._sklearn_available():
             raise ValueError(f"Modelo indisponivel sem scikit-learn: {candidate.algorithm}.")
         mean, scale, standardized = self._standardize(features)
+        # XGBoost e LightGBM
+        if candidate.algorithm in ("xgboost", "lightgbm"):
+            estimator = self._estimator(candidate)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", ConvergenceWarning)
+                estimator.fit(standardized, targets)
+            return TreeModel(mean, scale, estimator)
+        # Transformer
+        if candidate.algorithm == "transformer":
+            model = self._build_transformer(standardized.shape[1])
+            model.fit(standardized, targets, epochs=candidate.parameters["epochs"],
+                     batch_size=candidate.parameters["batch_size"], verbose=0)
+            return TreeModel(mean, scale, model)
+        # Modelos lineares sklearn
         estimator = self._estimator(candidate)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", ConvergenceWarning)
             estimator.fit(standardized, targets)
-        # XGBoost e LightGBM não têm coef_ e intercept_ da mesma forma
-        if candidate.algorithm in ("xgboost", "lightgbm"):
-            # Para tree-based models, não temos weights lineares
-            # Retornamos um modelo especial que usa predict do estimator
-            return TreeModel(mean, scale, estimator)
         weights = np.concatenate([[float(estimator.intercept_)], np.asarray(estimator.coef_, dtype=float)])
         return RidgeModel(mean, scale, weights)
 
@@ -363,6 +384,25 @@ class VariableTrainer:
 
     def _sklearn_available(self):
         return self.config.use_sklearn and Ridge is not None
+
+    def _build_transformer(self, input_dim):
+        """Constrói um modelo Transformer simples para regressão."""
+        inputs = keras.Input(shape=(input_dim,))
+        # Expandir dimensões para o Transformer
+        x = layers.Reshape((1, input_dim))(inputs)
+        # Multi-head attention
+        attention_output = layers.MultiHeadAttention(num_heads=2, key_dim=input_dim)(x, x)
+        x = layers.Add()([x, attention_output])
+        x = layers.LayerNormalization()(x)
+        # Feed-forward
+        x = layers.Dense(input_dim * 2, activation='relu')(x)
+        x = layers.Dense(input_dim)(x)
+        # Flatten e saída
+        x = layers.Flatten()(x)
+        outputs = layers.Dense(1)(x)
+        model = keras.Model(inputs, outputs)
+        model.compile(optimizer='adam', loss='mse')
+        return model
 
     def _validate_partition_sizes(self, partitions):
         requirements = (

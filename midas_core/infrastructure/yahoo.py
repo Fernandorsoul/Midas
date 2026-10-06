@@ -159,12 +159,31 @@ def fetch_historical_fundamentals(ticker: str) -> dict:
         if net_income and equity and equity > 0:
             roe = net_income / equity
         
+        # Dívida/Patrimônio
+        debt_to_equity = None
+        total_debt = None
+        if "Total Debt" in balance_sheet.index:
+            val = balance_sheet.loc["Total Debt", date]
+            if not _is_nan(val):
+                total_debt = float(val)
+        if total_debt and equity and equity > 0:
+            debt_to_equity = total_debt / equity
+        
+        # Lucro por ação (aproximado)
+        eps = None
+        if "Basic EPS" in financials.index:
+            val = financials.loc["Basic EPS", date]
+            if not _is_nan(val):
+                eps = float(val)
+        
         result[year] = {
             "net_margin": net_margin,
             "roe": roe,
             "net_income": net_income,
             "revenue": revenue,
             "equity": equity,
+            "debt_to_equity": debt_to_equity,
+            "eps": eps,
         }
     
     return result

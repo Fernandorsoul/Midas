@@ -8,7 +8,8 @@ FEATURE_NAMES = (
     "momentum_3m", "momentum_6m", "momentum_12m", "volatility", "drawdown",
     "rsi_14m", "macd_signal", "sma_ratio_12m", "bb_position", "atr_ratio",
     "net_margin_1y", "net_margin_2y", "roe_1y", "roe_2y",
-    "pe_ratio_1y", "pe_ratio_2y", "dividend_yield_1y", "dividend_yield_2y"
+    "pe_ratio_1y", "pe_ratio_2y", "dividend_yield_1y", "dividend_yield_2y",
+    "debt_to_equity_1y", "debt_to_equity_2y", "eps_growth"
 )
 SUPPORTED_HORIZONS = (6, 12, 24, 36)
 
@@ -199,6 +200,17 @@ def feature_vector(values, index, fundamentals=None, as_of_date=None):
         features["dividend_yield_1y"] = prev_year.get("dividend_yield") if prev_year.get("dividend_yield") is not None else 0.03
         # Dividend Yield de2 anos atrás
         features["dividend_yield_2y"] = prev2_year.get("dividend_yield") if prev2_year.get("dividend_yield") is not None else 0.03
+        # Dívida/Patrimônio do ano anterior
+        features["debt_to_equity_1y"] = prev_year.get("debt_to_equity") if prev_year.get("debt_to_equity") is not None else 1.0
+        # Dívida/Patrimônio de2 anos atrás
+        features["debt_to_equity_2y"] = prev2_year.get("debt_to_equity") if prev2_year.get("debt_to_equity") is not None else 1.0
+        # Crescimento do EPS
+        eps_1y = prev_year.get("eps")
+        eps_2y = prev2_year.get("eps")
+        if eps_1y and eps_2y and eps_2y != 0:
+            features["eps_growth"] = (eps_1y - eps_2y) / abs(eps_2y)
+        else:
+            features["eps_growth"] = 0.0
     else:
         features["net_margin_1y"] = 0.10  # Neutro se não disponível
         features["net_margin_2y"] = 0.10  # Neutro se não disponível
@@ -208,6 +220,9 @@ def feature_vector(values, index, fundamentals=None, as_of_date=None):
         features["pe_ratio_2y"] = 15.0  # Neutro se não disponível
         features["dividend_yield_1y"] = 0.03  # Neutro se não disponível
         features["dividend_yield_2y"] = 0.03  # Neutro se não disponível
+        features["debt_to_equity_1y"] = 1.0  # Neutro se não disponível
+        features["debt_to_equity_2y"] = 1.0  # Neutro se não disponível
+        features["eps_growth"] = 0.0  # Neutro se não disponível
     return features
 
 def build_samples(series, ticker, horizon, fundamentals=None):

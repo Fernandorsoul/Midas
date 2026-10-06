@@ -78,6 +78,9 @@ class VariableTrainerTests(unittest.TestCase):
                     'pe_ratio_2y':12.0+asset*2,
                     'dividend_yield_1y':0.03+asset*0.01,
                     'dividend_yield_2y':0.02+asset*0.01,
+                    'debt_to_equity_1y':1.0+asset*0.5,
+                    'debt_to_equity_2y':0.8+asset*0.5,
+                    'eps_growth':0.1+momentum*0.2,
                 }
                 rows.append({
                     'ticker':f'TEST{asset}',
@@ -92,11 +95,11 @@ class VariableTrainerTests(unittest.TestCase):
         result=VariableTrainer().train(self.make_rows(),now=month(60))
         self.assertEqual(result.parameters['model_version'],5)
         self.assertEqual(result.parameters['features'],
-            ['momentum_3m','momentum_6m','momentum_12m','volatility','drawdown','rsi_14m','macd_signal','sma_ratio_12m','bb_position','atr_ratio','net_margin_1y','net_margin_2y','roe_1y','roe_2y','pe_ratio_1y','pe_ratio_2y','dividend_yield_1y','dividend_yield_2y'])
+            ['momentum_3m','momentum_6m','momentum_12m','volatility','drawdown','rsi_14m','macd_signal','sma_ratio_12m','bb_position','atr_ratio','net_margin_1y','net_margin_2y','roe_1y','roe_2y','pe_ratio_1y','pe_ratio_2y','dividend_yield_1y','dividend_yield_2y','debt_to_equity_1y','debt_to_equity_2y','eps_growth'])
         self.assertIn('algorithm',result.parameters)
         self.assertIn('selection_results',result.parameters)
         self.assertGreater(len(result.parameters['selection_results']),1)
-        self.assertEqual(len(result.model.weights),19)
+        self.assertEqual(len(result.model.weights),22)
         self.assertGreater(result.metrics['test'],0)
         self.assertIn('rank_correlation',result.metrics)
 
