@@ -1,0 +1,198 @@
+import io
+import json
+import unittest
+from http.server import HTTPServer
+from threading import Thread
+from unittest.mock import patch
+
+from midas_core.interfaces.http import RequestHandler, TRAINING_JOB, TRAINING_LOCK
+
+
+class HTTPTestBase(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.server = HTTPServer(("127.0.0.1", 0), RequestHandler)
+        cls.port = cls.server.server_address[1]
+        cls.thread = Thread(target=cls.server.serve_forever, daemon=True)
+        cls.thread.start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.shutdown()
+
+    def request(self, method, path, body=None, headers=None):
+        import http.client
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        extra = {"Content-Type": "application/json"} if body else {}
+        if headers:
+            extra.update(headers)
+        payload = json.dumps(body).encode() if body else None
+        conn.request(method, path, body=payload, headers=extra)
+        response = conn.getresponse()
+        data = response.read().decode()
+        conn.close()
+        return response.status, json.loads(data) if data else None
+
+
+class TrainingStatusTests(HTTPTestBase):
+    def test_returns_idle_status(self):
+        status, body = self.request("GET", "/api/training/status")
+        self.assertEqual(status, 200)
+        self.assertIn("status", body)
+        self.assertIn("message", body)
+
+
+class AnalysisEndpointTests(HTTPTestBase):
+    @patch("midas_core.interfaces.http.build_report")
+    def test_returns_report_for_valid_horizon(self, mock_report):
+        mock_report.return_value = {"assets": [], "horizon": 12}
+        status, body = self.request("GET", "/api/analysis?horizon=12")
+        self.assertEqual(status, 200)
+        mock_report.assert_called_once_with(12)
+
+    @patch("midas_core.interfaces.http.build_report")
+    def test_defaults_to_12_when_no_horizon(self, mock_report):
+        mock_report.return_value = {"assets": [], "horizon": 12}
+        status, body = self.request("GET", "/api/analysis")
+        self.assertEqual(status, 200)
+        mock_report.assert_called_once_with(12)
+
+    @patch("midas_core.interfaces.http.build_report")
+    def test_returns_400_for_invalid_horizon(self, mock_report):
+        mock_report.side_effect = ValueError("Horizonte deve ser 12, 24 ou 36 meses.")
+        status, body = self.request("GET", "/api/analysis?horizon=99")
+        self.assertEqual(status, 400)
+        self.assertIn("error", body)
+
+    @patch("midas_core.interfaces.http.build_report")
+    def test_returns_503_on_database_error(self, mock_report):
+        import psycopg
+        mock_report.side_effect = psycopg.Error("connection failed")
+        status, body = self.request("GET", "/api/analysis?horizon=12")
+        self.assertEqual(status, 503)
+        self.assertIn("error", body)
+
+    def test_returns_404_for_unknown_api_route(self):
+        status, body = self.request("GET", "/api/unknown")
+        self.assertEqual(status, 404)
+        self.assertIn("error", body)
+
+
+class TrainingEndpointTests(HTTPTestBase):
+    def setUp(self):
+        with TRAINING_LOCK:
+            TRAINING_JOB.clear()
+            TRAINING_JOB.update({"status": "idle", "message": "Nenhum treinamento em execução."})
+
+    @patch("midas_core.interfaces.http._run_training_job")
+    def test_starts_training_and_returns_202(self, mock_job):
+        status, body = self.request("POST", "/api/training", {"horizon": 12})
+        self.assertEqual(status, 202)
+        self.assertEqual(body["horizon"], 12)
+
+    def test_returns_400_for_invalid_horizon(self):
+        status, body = self.request("POST", "/api/training", {"horizon": 99})
+        self.assertEqual(status, 400)
+        self.assertIn("error", body)
+
+    def test_returns_400_for_string_horizon(self):
+        status, body = self.request("POST", "/api/training", {"horizon": "twelve"})
+        self.assertEqual(status, 400)
+
+    def test_returns_409_when_already_running(self):
+        with TRAINING_LOCK:
+            TRAINING_JOB.update({"status": "running"})
+        status, body = self.request("POST", "/api/training", {"horizon": 12})
+        self.assertEqual(status, 409)
+
+    def test_returns_404_for_unknown_post_route(self):
+        status, body = self.request("POST", "/api/unknown", {})
+        self.assertEqual(status, 404)
+
+    def test_returns_400_for_non_json_content_type(self):
+        import http.client
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("POST", "/api/training", body=b"not json", headers={"Content-Type": "text/plain"})
+        response = conn.getresponse()
+        self.assertEqual(response.status, 400)
+        conn.close()
+
+    def test_returns_400_for_empty_body(self):
+        import http.client
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("POST", "/api/training", body=b"", headers={"Content-Type": "application/json"})
+        response = conn.getresponse()
+        self.assertEqual(response.status, 400)
+        conn.close()
+
+
+class FavoritesEndpointTests(HTTPTestBase):
+    @patch("midas_core.interfaces.http.set_favorite")
+    def test_saves_favorite(self, mock_fav):
+        status, body = self.request("PUT", "/api/favorites", {"asset_id": 1, "saved": True})
+        self.assertEqual(status, 200)
+        self.assertEqual(body["saved"], True)
+        mock_fav.assert_called_once_with(1, True)
+
+    @patch("midas_core.interfaces.http.set_favorite")
+    def test_removes_favorite(self, mock_fav):
+        status, body = self.request("PUT", "/api/favorites", {"asset_id": 2, "saved": False})
+        self.assertEqual(status, 200)
+        self.assertEqual(body["saved"], False)
+        mock_fav.assert_called_once_with(2, False)
+
+    def test_returns_400_for_missing_asset_id(self):
+        status, body = self.request("PUT", "/api/favorites", {"saved": True})
+        self.assertEqual(status, 400)
+
+    def test_returns_400_for_string_asset_id(self):
+        status, body = self.request("PUT", "/api/favorites", {"asset_id": "one", "saved": True})
+        self.assertEqual(status, 400)
+
+    def test_returns_400_for_non_bool_saved(self):
+        status, body = self.request("PUT", "/api/favorites", {"asset_id": 1, "saved": "yes"})
+        self.assertEqual(status, 400)
+
+    def test_returns_404_for_unknown_put_route(self):
+        status, body = self.request("PUT", "/api/unknown", {})
+        self.assertEqual(status, 404)
+
+
+class CORSTests(HTTPTestBase):
+    def test_post_rejects_foreign_origin(self):
+        import http.client
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("POST", "/api/training",
+                     body=json.dumps({"horizon": 12}).encode(),
+                     headers={"Content-Type": "application/json", "Origin": "http://evil.com"})
+        response = conn.getresponse()
+        self.assertEqual(response.status, 403)
+        conn.close()
+
+    def test_put_rejects_foreign_origin(self):
+        import http.client
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("PUT", "/api/favorites",
+                     body=json.dumps({"asset_id": 1, "saved": True}).encode(),
+                     headers={"Content-Type": "application/json", "Origin": "http://evil.com"})
+        response = conn.getresponse()
+        self.assertEqual(response.status, 403)
+        conn.close()
+
+
+class ResponseFormatTests(HTTPTestBase):
+    def test_json_content_type(self):
+        status, body = self.request("GET", "/api/training/status")
+        self.assertEqual(status, 200)
+
+    @patch("midas_core.interfaces.http.build_report")
+    def test_error_response_is_json(self, mock_report):
+        mock_report.side_effect = ValueError("test error")
+        status, body = self.request("GET", "/api/analysis?horizon=12")
+        self.assertEqual(status, 400)
+        self.assertIsInstance(body, dict)
+        self.assertIn("error", body)
+
+
+if __name__ == "__main__":
+    unittest.main()

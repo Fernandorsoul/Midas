@@ -1,0 +1,18 @@
+{
+  "name": "midas-ui",
+  "version": "0.4.0",
+  "private": true,
+  "packageManager": "yarn@1.22.22",
+  "scripts": {
+    "dev": "vite web --host 0.0.0.0 --port 5173",
+    "build": "vite build web --outDir dist",
+    "check": "node --check web/app.js && node --check web/AssetExplorer.js && node --check web/TrainingConsole.js && node --check web/ValidationHistory.js && node --check web/EvaluationPanel.js && node --check web/layout.js && node --check web/ui.js && node --check web/react.js"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "latest",
+    "vite": "latest",
+    "react": "latest",
+    "react-dom": "latest"
+  },
+  "devDependencies": {}
+}

@@ -1,0 +1,53 @@
+"""Caso de uso: publicar dados mensais para treinamento."""
+from datetime import datetime, timezone
+import uuid
+
+from midas_core.domain.features import SUPPORTED_HORIZONS, build_samples, month_end_series
+from midas_core.infrastructure.brapi import SOURCE
+from midas_core.infrastructure.repositories import MongoRepository, PostgresRepository
+
+def publish_dataset(horizons=(12,), mongo_repository=None, postgres_repository=None):
+    horizons = tuple(dict.fromkeys(horizons))
+    if not horizons or any(value not in SUPPORTED_HORIZONS for value in horizons):
+        raise ValueError("Horizontes aceitos: 12, 24 e 36 meses.")
+    mongo_repository = mongo_repository or MongoRepository()
+    postgres_repository = postgres_repository or PostgresRepository()
+
+    grouped = {}
+    for row in postgres_repository.training_prices(SOURCE):
+        grouped.setdefault(row["ticker"], []).append(row)
+    if not grouped:
+        raise ValueError("Não há cotações reais da brapi.dev no PostgreSQL.")
+
+    dataset_id = str(uuid.uuid4())
+    created_at = datetime.now(timezone.utc)
+    samples = []
+    covered_horizons = set()
+    for ticker, prices in grouped.items():
+        series = month_end_series(prices)
+        for horizon in horizons:
+            generated = build_samples(series, ticker, horizon)
+            if generated:
+                covered_horizons.add(horizon)
+            for sample in generated:
+                sample["dataset_id"] = dataset_id
+            samples.extend(generated)
+
+    missing = set(horizons) - covered_horizons
+    if missing:
+        labels = ", ".join(f"{item} meses" for item in sorted(missing))
+        raise ValueError(f"Histórico insuficiente para: {labels}")
+
+    metadata = {
+        "_id": dataset_id,
+        "name": "brapi-monthly-adjusted",
+        "version": created_at.isoformat(),
+        "source": "brapi.dev:daily_prices.adjusted_close",
+        "is_demo": False,
+        "created_at": created_at,
+        "horizons": list(horizons),
+        "tickers": sorted(grouped),
+        "samples": len(samples),
+    }
+    mongo_repository.publish_dataset(metadata, samples)
+    return dataset_id, len(samples)

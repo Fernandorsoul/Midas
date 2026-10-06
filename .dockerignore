@@ -1,0 +1,10 @@
+.env
+.git
+.venv
+__pycache__
+*.pyc
+test_*.py
+docs
+node_modules
+web/dist
+.yarn

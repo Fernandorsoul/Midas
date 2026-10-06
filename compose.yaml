@@ -1,0 +1,114 @@
+name: midas
+services:
+  app:
+    build:
+      context: .
+      target: production
+    restart: unless-stopped
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:?Execute python3 scripts/setup_env.py}
+      MONGO_HOST: mongodb
+      MONGO_PORT: 27017
+      MONGO_APP_PASSWORD: ${MONGO_APP_PASSWORD:?Execute python3 scripts/setup_env.py}
+      HTTP_HOST: 0.0.0.0
+      PORT: 8000
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/analysis?horizon=12', timeout=5)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+  dev:
+    build:
+      context: .
+      target: dev
+    profiles:
+      - dev
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:?Execute python3 scripts/setup_env.py}
+      MONGO_HOST: mongodb
+      MONGO_PORT: 27017
+      MONGO_APP_PASSWORD: ${MONGO_APP_PASSWORD:?Execute python3 scripts/setup_env.py}
+      HTTP_HOST: 0.0.0.0
+      PORT: 8000
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - .:/app
+      - /app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+    command: python midas.py
+  ui:
+    build:
+      context: .
+      target: dev
+    profiles:
+      - dev
+    environment:
+      VITE_API_TARGET: http://dev:8000
+    ports:
+      - "127.0.0.1:5173:5173"
+    volumes:
+      - .:/app
+      - /app/node_modules
+    depends_on:
+      - dev
+    command: yarn dev
+  postgres:
+    image: postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: midas
+      POSTGRES_USER: midas_admin
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Execute python3 scripts/setup_env.py}
+      APP_PASSWORD: ${POSTGRES_APP_PASSWORD:?Execute python3 scripts/setup_env.py}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+      - ./infra/postgres:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U midas_admin -d midas"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+  mongodb:
+    image: mongo:8.0
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: midas_admin
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?Execute python3 scripts/setup_env.py}
+      MONGO_INITDB_DATABASE: midas_training
+      MONGO_APP_PASSWORD: ${MONGO_APP_PASSWORD:?Execute python3 scripts/setup_env.py}
+    ports:
+      - "127.0.0.1:${MONGO_PORT:-27017}:27017"
+    volumes:
+      - mongo_data:/data/db
+      - mongo_config:/data/configdb
+      - ./infra/mongo:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: [CMD, mongosh, --quiet, --eval, "const d=db.getSiblingDB('midas_training'); d.auth('midas_app', process.env.MONGO_APP_PASSWORD); if(d.runCommand({ping:1}).ok!==1) quit(1); if(d.getCollectionNames().length<3) quit(1)"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+      start_period: 30s
+volumes:
+  postgres_data:
+  mongo_data:
+  mongo_config:
