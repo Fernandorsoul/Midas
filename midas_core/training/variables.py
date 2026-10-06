@@ -105,9 +105,26 @@ class VariableTrainer:
         residuals = test_targets - test_estimates
         baseline = float(np.mean(evaluation_targets))
 
-        # Ensemble: treinar top3 modelos e combinar previsões
+        # Ensemble: treinar top modelos (incluindo XGBoost) e combinar previsões
         if self.config.use_ensemble and len(selection_results) >= 3:
-            top_models = sorted(selection_results, key=lambda x: x["mae"])[:3]
+            # Separar modelos por tipo
+            linear_models = [r for r in selection_results if r["algorithm"] in ("ridge_sklearn", "lasso_sklearn", "elasticnet_sklearn", "huber_sklearn")]
+            xgb_models = [r for r in selection_results if r["algorithm"] == "xgboost"]
+            lgbm_models = [r for r in selection_results if r["algorithm"] == "lightgbm"]
+            
+            # Selecionar top modelos de cada tipo
+            top_linear = sorted(linear_models, key=lambda x: x["mae"])[:2] if linear_models else []
+            top_xgb = sorted(xgb_models, key=lambda x: x["mae"])[:1] if xgb_models else []
+            top_lgbm = sorted(lgbm_models, key=lambda x: x["mae"])[:1] if lgbm_models else []
+            
+            # Combinar top modelos (mínimo3, máximo5)
+            top_models = top_linear + top_xgb + top_lgbm
+            if len(top_models) < 3:
+                # Se não temos XGBoost/LightGBM, usar top3 lineares
+                top_models = sorted(selection_results, key=lambda x: x["mae"])[:3]
+            else:
+                top_models = top_models[:5]  # Máximo5 modelos
+            
             ensemble_predictions = []
             for model_result in top_models:
                 candidate = ModelCandidate(model_result["algorithm"], model_result["parameters"])
@@ -119,7 +136,7 @@ class VariableTrainer:
             if ensemble_mae < mean_absolute_error(test_targets, test_estimates):
                 test_estimates = ensemble_estimates
                 residuals = test_targets - test_estimates
-                selected = ModelCandidate("ensemble_top3", {"models": top_models})
+                selected = ModelCandidate("ensemble_boosted", {"models": top_models})
 
         metrics = {
             "mae": mean_absolute_error(test_targets, test_estimates),
@@ -157,10 +174,20 @@ class VariableTrainer:
 
         # Para produção, usar ensemble se disponível
         all_features, all_targets = self._arrays(rows)
-        if self.config.use_ensemble and selected.algorithm == "ensemble_top3":
-            # Treinar top3 modelos com todos os dados
+        if self.config.use_ensemble and selected.algorithm == "ensemble_boosted":
+            # Treinar top modelos com todos os dados
             all_selection_results = selection_results
-            top_models = sorted(all_selection_results, key=lambda x: x["mae"])[:3]
+            linear_models = [r for r in all_selection_results if r["algorithm"] in ("ridge_sklearn", "lasso_sklearn", "elasticnet_sklearn", "huber_sklearn")]
+            xgb_models = [r for r in all_selection_results if r["algorithm"] == "xgboost"]
+            lgbm_models = [r for r in all_selection_results if r["algorithm"] == "lightgbm"]
+            top_linear = sorted(linear_models, key=lambda x: x["mae"])[:2] if linear_models else []
+            top_xgb = sorted(xgb_models, key=lambda x: x["mae"])[:1] if xgb_models else []
+            top_lgbm = sorted(lgbm_models, key=lambda x: x["mae"])[:1] if lgbm_models else []
+            top_models = top_linear + top_xgb + top_lgbm
+            if len(top_models) < 3:
+                top_models = sorted(all_selection_results, key=lambda x: x["mae"])[:3]
+            else:
+                top_models = top_models[:5]
             production_model = self._fit_candidate(all_features, all_targets, 
                 ModelCandidate(top_models[0]["algorithm"], top_models[0]["parameters"]))
         else:

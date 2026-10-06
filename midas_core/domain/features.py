@@ -6,7 +6,8 @@ import numpy as np
 
 FEATURE_NAMES = (
     "momentum_6m", "momentum_12m", "volatility", "drawdown",
-    "rsi_14m", "macd_signal", "sma_ratio_12m", "bb_position", "atr_ratio"
+    "rsi_14m", "macd_signal", "sma_ratio_12m", "bb_position", "atr_ratio",
+    "pe_ratio", "dividend_yield", "net_margin"
 )
 SUPPORTED_HORIZONS = (12, 24, 36)
 
@@ -89,7 +90,7 @@ def _atr_ratio(values, period=14):
     atr = np.mean(changes)
     return float(atr / values[-1]) if values[-1] > 0 else None
 
-def feature_vector(values, index):
+def feature_vector(values, index, fundamentals=None):
     """Calcula variáveis usando exclusivamente observações até index."""
     if index < 12:
         raise ValueError("São necessários pelo menos 13 fechamentos mensais.")
@@ -116,9 +117,18 @@ def feature_vector(values, index):
     # ATR ratio
     atr = _atr_ratio(values[:index + 1], 14)
     features["atr_ratio"] = atr if atr is not None else 0.05  # Neutro se não disponível
+    # Features fundamentalistas (opcionais)
+    if fundamentals:
+        features["pe_ratio"] = fundamentals.pe_ratio if fundamentals.pe_ratio is not None else 15.0  # Neutro
+        features["dividend_yield"] = fundamentals.dividend_yield if fundamentals.dividend_yield is not None else 0.03  # Neutro
+        features["net_margin"] = fundamentals.net_margin if fundamentals.net_margin is not None else 0.10  # Neutro
+    else:
+        features["pe_ratio"] = 15.0  # Neutro se não disponível
+        features["dividend_yield"] = 0.03  # Neutro se não disponível
+        features["net_margin"] = 0.10  # Neutro se não disponível
     return features
 
-def build_samples(series, ticker, horizon):
+def build_samples(series, ticker, horizon, fundamentals=None):
     if horizon not in SUPPORTED_HORIZONS:
         raise ValueError("Horizonte inválido.")
     dates = [item[0] for item in series]
@@ -129,11 +139,11 @@ def build_samples(series, ticker, horizon):
             "as_of": dates[index],
             "label_end": dates[index + horizon],
             "horizon_months": horizon,
-            "features": feature_vector(values, index),
+            "features": feature_vector(values, index, fundamentals),
             "target": float(values[index + horizon] / values[index] - 1),
         }
         for index in range(12, len(values) - horizon)
     ]
 
-def latest_features(series):
-    return feature_vector([item[1] for item in series], len(series) - 1) if len(series) >= 13 else None
+def latest_features(series, fundamentals=None):
+    return feature_vector([item[1] for item in series], len(series) - 1, fundamentals) if len(series) >= 13 else None

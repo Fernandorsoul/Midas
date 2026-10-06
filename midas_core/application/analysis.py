@@ -4,6 +4,7 @@ import numpy as np
 from midas_core.domain.features import SUPPORTED_HORIZONS, latest_features, month_end_series
 from midas_core.domain.regression import from_artifact, predict
 from midas_core.infrastructure.repositories import MongoRepository, PostgresRepository
+from midas_core.infrastructure.yahoo import fetch_fundamentals, YahooFinanceError
 
 MINIMUM_DRAWDOWN = -0.05
 MINIMUM_RANK_CORRELATION = 0.10
@@ -18,7 +19,7 @@ def _is_validated(metrics, artifact):
     return bool(
         metrics
         and artifact
-        and artifact.get("parameters", {}).get("model_version") == 3
+        and artifact.get("parameters", {}).get("model_version") == 5
         and metrics.get("mae_improvement", -1) >= MINIMUM_RELATIVE_MAE_IMPROVEMENT
         and metrics.get("rank_correlation", -1) >= MINIMUM_RANK_CORRELATION
     )
@@ -36,7 +37,12 @@ def build_report(horizon, mongo_repository=None, postgres_repository=None):
         asset["price"] = float(prices[-1]["close"]) if prices else None
         asset["price_date"] = prices[-1]["price_date"].isoformat() if prices else None
         asset["source"] = prices[-1]["source"] if prices else None
-        asset["_features"] = latest_features(month_end_series(prices))
+        # Buscar fundamentos para o ativo
+        try:
+            fundamentals = fetch_fundamentals(asset["ticker"])
+        except (YahooFinanceError, Exception):
+            fundamentals = None
+        asset["_features"] = latest_features(month_end_series(prices), fundamentals)
 
     metrics = artifact = run_date = None
     for run in postgres_repository.model_runs(horizon):
