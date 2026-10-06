@@ -4,7 +4,7 @@ import uuid
 
 from midas_core.domain.features import SUPPORTED_HORIZONS, build_samples, month_end_series
 from midas_core.infrastructure.repositories import MongoRepository, PostgresRepository
-from midas_core.infrastructure.yahoo import fetch_fundamentals, YahooFinanceError
+from midas_core.infrastructure.yahoo import fetch_historical_fundamentals, YahooFinanceError
 
 def publish_dataset(horizons=(12,), source=None, mongo_repository=None, postgres_repository=None):
     horizons = tuple(dict.fromkeys(horizons))
@@ -23,13 +23,13 @@ def publish_dataset(horizons=(12,), source=None, mongo_repository=None, postgres
     if not grouped:
         raise ValueError(f"Não há cotações da fonte {source} no PostgreSQL.")
 
-    # Buscar fundamentos para cada ticker
+    # Buscar fundamentos históricos para cada ticker
     fundamentals_cache = {}
     for ticker in grouped:
         try:
-            fundamentals_cache[ticker] = fetch_fundamentals(ticker)
+            fundamentals_cache[ticker] = fetch_historical_fundamentals(ticker)
         except (YahooFinanceError, Exception):
-            fundamentals_cache[ticker] = None  # Usar valores neutros
+            fundamentals_cache[ticker] = {}  # Usar valores neutros
 
     dataset_id = str(uuid.uuid4())
     created_at = datetime.now(timezone.utc)
@@ -37,7 +37,7 @@ def publish_dataset(horizons=(12,), source=None, mongo_repository=None, postgres
     covered_horizons = set()
     for ticker, prices in grouped.items():
         series = month_end_series(prices)
-        fundamentals = fundamentals_cache.get(ticker)
+        fundamentals = fundamentals_cache.get(ticker, {})
         for horizon in horizons:
             generated = build_samples(series, ticker, horizon, fundamentals)
             if generated:

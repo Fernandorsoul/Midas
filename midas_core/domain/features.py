@@ -6,7 +6,8 @@ import numpy as np
 
 FEATURE_NAMES = (
     "momentum_6m", "momentum_12m", "volatility", "drawdown",
-    "rsi_14m", "macd_signal", "sma_ratio_12m", "bb_position", "atr_ratio"
+    "rsi_14m", "macd_signal", "sma_ratio_12m", "bb_position", "atr_ratio",
+    "net_margin_1y", "net_margin_2y", "roe_1y", "roe_2y"
 )
 SUPPORTED_HORIZONS = (12, 24, 36)
 
@@ -148,7 +149,7 @@ def _mfi(values, period=14):
     # Simplificação: usamos RSI como proxy
     return _rsi(values, period)
 
-def feature_vector(values, index, fundamentals=None):
+def feature_vector(values, index, fundamentals=None, as_of_date=None):
     """Calcula variáveis usando exclusivamente observações até index."""
     if index < 12:
         raise ValueError("São necessários pelo menos 13 fechamentos mensais.")
@@ -175,6 +176,24 @@ def feature_vector(values, index, fundamentals=None):
     # ATR ratio
     atr = _atr_ratio(values[:index + 1], 14)
     features["atr_ratio"] = atr if atr is not None else 0.05  # Neutro se não disponível
+    # Features fundamentalistas históricas
+    if fundamentals and as_of_date:
+        year = as_of_date.year
+        # Margem líquida do ano anterior
+        prev_year = fundamentals.get(year - 1, {})
+        features["net_margin_1y"] = prev_year.get("net_margin") if prev_year.get("net_margin") is not None else 0.10
+        # Margem líquida de2 anos atrás
+        prev2_year = fundamentals.get(year - 2, {})
+        features["net_margin_2y"] = prev2_year.get("net_margin") if prev2_year.get("net_margin") is not None else 0.10
+        # ROE do ano anterior
+        features["roe_1y"] = prev_year.get("roe") if prev_year.get("roe") is not None else 0.15
+        # ROE de2 anos atrás
+        features["roe_2y"] = prev2_year.get("roe") if prev2_year.get("roe") is not None else 0.15
+    else:
+        features["net_margin_1y"] = 0.10  # Neutro se não disponível
+        features["net_margin_2y"] = 0.10  # Neutro se não disponível
+        features["roe_1y"] = 0.15  # Neutro se não disponível
+        features["roe_2y"] = 0.15  # Neutro se não disponível
     return features
 
 def build_samples(series, ticker, horizon, fundamentals=None):
@@ -188,11 +207,12 @@ def build_samples(series, ticker, horizon, fundamentals=None):
             "as_of": dates[index],
             "label_end": dates[index + horizon],
             "horizon_months": horizon,
-            "features": feature_vector(values, index, fundamentals),
+            "features": feature_vector(values, index, fundamentals, dates[index]),
             "target": float(values[index + horizon] / values[index] - 1),
         }
         for index in range(12, len(values) - horizon)
     ]
 
 def latest_features(series, fundamentals=None):
-    return feature_vector([item[1] for item in series], len(series) - 1, fundamentals) if len(series) >= 13 else None
+    dates = [item[0] for item in series]
+    return feature_vector([item[1] for item in series], len(series) - 1, fundamentals, dates[-1] if dates else None) if len(series) >= 13 else None

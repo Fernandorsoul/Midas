@@ -106,3 +106,75 @@ def fetch_fundamentals(ticker: str) -> FundamentalData:
         roe=safe_float("returnOnEquity"),
         market_cap=safe_float("marketCap"),
     )
+
+def fetch_historical_fundamentals(ticker: str) -> dict:
+    """Busca dados fundamentalistas históricos do Yahoo Finance.
+    
+    Retorna um dicionário com dados anuais dos últimos5 anos.
+    """
+    yahoo_ticker = normalize_ticker(ticker)
+    try:
+        stock = yf.Ticker(yahoo_ticker)
+        financials = stock.financials
+        balance_sheet = stock.balance_sheet
+    except Exception as e:
+        raise YahooFinanceError(f"Erro ao buscar fundamentos históricos de {ticker}: {e}")
+
+    if financials.empty or balance_sheet.empty:
+        return {}
+
+    result = {}
+    for date in financials.columns:
+        year = date.year
+        if year <2020:  # Limitar a5 anos
+            continue
+        
+        # Lucro líquido
+        net_income = None
+        if "Net Income" in financials.index:
+            val = financials.loc["Net Income", date]
+            if not _is_nan(val):
+                net_income = float(val)
+        
+        # Receita
+        revenue = None
+        if "Total Revenue" in financials.index:
+            val = financials.loc["Total Revenue", date]
+            if not _is_nan(val):
+                revenue = float(val)
+        
+        # Patrimônio líquido
+        equity = None
+        if "Stockholders Equity" in balance_sheet.index:
+            val = balance_sheet.loc["Stockholders Equity", date]
+            if not _is_nan(val):
+                equity = float(val)
+        
+        # Calcular métricas
+        net_margin = None
+        if net_income and revenue and revenue > 0:
+            net_margin = net_income / revenue
+        
+        roe = None
+        if net_income and equity and equity > 0:
+            roe = net_income / equity
+        
+        result[year] = {
+            "net_margin": net_margin,
+            "roe": roe,
+            "net_income": net_income,
+            "revenue": revenue,
+            "equity": equity,
+        }
+    
+    return result
+
+def _is_nan(value):
+    """Verifica se um valor é NaN."""
+    if value is None:
+        return True
+    try:
+        import math
+        return math.isnan(float(value))
+    except (TypeError, ValueError):
+        return True
