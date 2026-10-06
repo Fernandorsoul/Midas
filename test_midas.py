@@ -81,7 +81,7 @@ class VariableTrainerTests(unittest.TestCase):
 
     def test_trainer_returns_model_metrics_and_selected_variables(self):
         result=VariableTrainer().train(self.make_rows(),now=month(60))
-        self.assertEqual(result.parameters['model_version'],4)
+        self.assertEqual(result.parameters['model_version'],5)
         self.assertEqual(result.parameters['features'],
             ['momentum_6m','momentum_12m','volatility','drawdown','rsi_14m','macd_signal','sma_ratio_12m','bb_position','atr_ratio'])
         self.assertIn('algorithm',result.parameters)

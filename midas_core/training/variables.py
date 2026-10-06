@@ -14,6 +14,16 @@ except Exception:  # pragma: no cover - fallback para ambientes sem sklearn.
     ElasticNet = HuberRegressor = Lasso = Ridge = None
     warnings = None
 
+try:
+    from xgboost import XGBRegressor
+except Exception:  # pragma: no cover
+    XGBRegressor = None
+
+try:
+    from lightgbm import LGBMRegressor
+except Exception:  # pragma: no cover
+    LGBMRegressor = None
+
 from midas_core.domain.features import FEATURE_NAMES
 from midas_core.domain.regression import (
     RidgeModel,
@@ -32,13 +42,19 @@ class VariableTrainingConfig:
     lasso_alpha_candidates: tuple[float, ...] = (0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05)
     elasticnet_alpha_candidates: tuple[float, ...] = (0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05)
     elasticnet_l1_ratio_candidates: tuple[float, ...] = (0.1, 0.25, 0.5, 0.75, 0.9)
+    xgb_n_estimators: tuple[int, ...] = (50, 100, 200)
+    xgb_max_depth: tuple[int, ...] = (3, 5, 7)
+    xgb_learning_rate: tuple[float, ...] = (0.01, 0.05, 0.1)
+    lgbm_n_estimators: tuple[int, ...] = (50, 100, 200)
+    lgbm_max_depth: tuple[int, ...] = (3, 5, 7)
+    lgbm_learning_rate: tuple[float, ...] = (0.01, 0.05, 0.1)
     validation_fraction: float = 0.2
     test_fraction: float = 0.2
     minimum_selection_samples: int = 20
     minimum_validation_samples: int = 5
     minimum_evaluation_samples: int = 20
     minimum_test_samples: int = 5
-    model_version: int = 4
+    model_version: int = 5
     use_sklearn: bool = True
     use_ensemble: bool = True
 
@@ -52,6 +68,13 @@ class TrainingResult:
 class ModelCandidate:
     algorithm: str
     parameters: dict
+
+@dataclass(frozen=True)
+class TreeModel:
+    """Modelo para tree-based models (XGBoost, LightGBM)."""
+    mean: np.ndarray
+    scale: np.ndarray
+    estimator: object  # XGBRegressor ou LGBMRegressor
 
 class VariableTrainer:
     """Treina as variaveis e devolve um resultado serializavel pelo chamador."""
@@ -234,6 +257,24 @@ class VariableTrainer:
                     {"alpha": alpha, "l1_ratio": l1_ratio},
                 ))
         candidates.append(ModelCandidate("huber_sklearn", {"epsilon": 1.35, "alpha": 0.0001}))
+        # XGBoost candidates
+        if XGBRegressor is not None:
+            for n_estimators in self.config.xgb_n_estimators:
+                for max_depth in self.config.xgb_max_depth:
+                    for learning_rate in self.config.xgb_learning_rate:
+                        candidates.append(ModelCandidate(
+                            "xgboost",
+                            {"n_estimators": n_estimators, "max_depth": max_depth, "learning_rate": learning_rate},
+                        ))
+        # LightGBM candidates
+        if LGBMRegressor is not None:
+            for n_estimators in self.config.lgbm_n_estimators:
+                for max_depth in self.config.lgbm_max_depth:
+                    for learning_rate in self.config.lgbm_learning_rate:
+                        candidates.append(ModelCandidate(
+                            "lightgbm",
+                            {"n_estimators": n_estimators, "max_depth": max_depth, "learning_rate": learning_rate},
+                        ))
         return candidates
 
     def _fit_candidate(self, features, targets, candidate):
@@ -246,6 +287,11 @@ class VariableTrainer:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", ConvergenceWarning)
             estimator.fit(standardized, targets)
+        # XGBoost e LightGBM não têm coef_ e intercept_ da mesma forma
+        if candidate.algorithm in ("xgboost", "lightgbm"):
+            # Para tree-based models, não temos weights lineares
+            # Retornamos um modelo especial que usa predict do estimator
+            return TreeModel(mean, scale, estimator)
         weights = np.concatenate([[float(estimator.intercept_)], np.asarray(estimator.coef_, dtype=float)])
         return RidgeModel(mean, scale, weights)
 
@@ -264,6 +310,22 @@ class VariableTrainer:
             )
         if candidate.algorithm == "huber_sklearn":
             return HuberRegressor(alpha=params["alpha"], epsilon=params["epsilon"])
+        if candidate.algorithm == "xgboost":
+            return XGBRegressor(
+                n_estimators=params["n_estimators"],
+                max_depth=params["max_depth"],
+                learning_rate=params["learning_rate"],
+                random_state=42,
+                verbosity=0,
+            )
+        if candidate.algorithm == "lightgbm":
+            return LGBMRegressor(
+                n_estimators=params["n_estimators"],
+                max_depth=params["max_depth"],
+                learning_rate=params["learning_rate"],
+                random_state=42,
+                verbose=-1,
+            )
         raise ValueError(f"Modelo desconhecido: {candidate.algorithm}.")
 
     def _standardize(self, features):

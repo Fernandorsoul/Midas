@@ -53,6 +53,11 @@ def fit(features, targets, alpha=10.0):
 
 def predict(model, features):
     values = np.atleast_2d(features)
+    # Suporte para TreeModel (XGBoost, LightGBM)
+    if hasattr(model, 'estimator') and hasattr(model.estimator, 'predict'):
+        standardized = (values - model.mean) / model.scale
+        return model.estimator.predict(standardized)
+    # Modelo linear (RidgeModel)
     design = np.column_stack([np.ones(len(values)), (values - model.mean) / model.scale])
     return design @ model.weights
 
