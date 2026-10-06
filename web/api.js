@@ -25,6 +25,8 @@ export const removeFromPortfolio = ticker => request('/api/portfolio/remove', {
   body: JSON.stringify({ ticker }),
 });
 
+export const getPortfolioDividends = () => request('/api/portfolio/dividends');
+
 export const saveFavorite = (assetId, saved) => request('/api/favorites', {
   method: 'PUT',
   headers: { 'Content-Type': 'application/json' },

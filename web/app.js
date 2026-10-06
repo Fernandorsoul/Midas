@@ -1,4 +1,4 @@
-import { getAnalysis, getPortfolio, getPortfolioList, addToPortfolio, removeFromPortfolio, startTraining, getTrainingStatus } from './api.js';
+import { getAnalysis, getPortfolio, getPortfolioList, addToPortfolio, removeFromPortfolio, getPortfolioDividends, startTraining, getTrainingStatus } from './api.js';
 import { AssetExplorer } from './AssetExplorer.js';
 import { EvaluationPanel } from './EvaluationPanel.js';
 import { Layout } from './layout.js';
@@ -74,12 +74,16 @@ function PortfolioManager({ portfolioList, portfolioData, onAdd, onRemove, loadi
 }
 
 // Portfolio Page
-function PortfolioPage({ portfolio, loading, horizon, portfolioList, portfolioData, onAdd, onRemove, onTrain, job }) {
+function PortfolioPage({ portfolio, loading, horizon, portfolioList, portfolioData, dividends, onAdd, onRemove, onTrain, job }) {
   if (loading) return h('div', { className: 'loading' }, 'Carregando carteira...');
   
   const assets = portfolio?.portfolio || [];
   const validated = portfolio?.model_validated;
   const running = job?.status === 'queued' || job?.status === 'running';
+  
+  // Calcular totais de dividendos
+  const totalDividends = Object.values(dividends || {}).reduce((sum, d) => sum + (d.total_dividends || 0), 0);
+  const totalSharesFromDividends = Object.values(dividends || {}).reduce((sum, d) => sum + (d.shares_from_dividends || 0), 0);
   
   return h('section', { className: 'portfolio' },
     h('div', { className: 'section-title' },
@@ -97,6 +101,18 @@ function PortfolioPage({ portfolio, loading, horizon, portfolioList, portfolioDa
       ),
     ),
     h(PortfolioManager, { portfolioList, portfolioData, onAdd, onRemove, loading }),
+    // Dividend Summary
+    totalDividends > 0 ? h('div', { className: 'dividend-summary' },
+      h('div', { className: 'dividend-card' },
+        h('div', { className: 'dividend-label' }, 'Total de Dividendos (12m)'),
+        h('div', { className: 'dividend-value' }, 'R$ ' + totalDividends.toFixed(2)),
+      ),
+      h('div', { className: 'dividend-card' },
+        h('div', { className: 'dividend-label' }, 'Cotas via Reinvestimento'),
+        h('div', { className: 'dividend-value' }, totalSharesFromDividends + ' cotas'),
+      ),
+    ) : null,
+    // Asset Cards
     assets.length > 0 ? h('div', { className: 'portfolio-grid' },
       assets.map((asset, index) => {
         const opp = asset.opportunity;
@@ -108,6 +124,7 @@ function PortfolioPage({ portfolio, loading, horizon, portfolioList, portfolioDa
         const vol = opp ? (opp.volatility * 100).toFixed(1) : '\u2014';
         const isCandidate = opp?.candidate;
         const isValidated = opp?.validated;
+        const div = dividends?.[asset.ticker];
         
         return h('div', { key: asset.ticker, className: 'portfolio-card' + (isCandidate ? ' candidate' : '') },
           h('div', { className: 'portfolio-header' },
@@ -137,6 +154,25 @@ function PortfolioPage({ portfolio, loading, horizon, portfolioList, portfolioDa
               h('span', { className: 'value' }, vol + '%'),
             ),
           ),
+          // Dividend Info
+          div && div.status === 'ok' ? h('div', { className: 'dividend-info' },
+            h('div', { className: 'dividend-row' },
+              h('span', { className: 'label' }, 'Dividendo Anual'),
+              h('span', { className: 'value' }, 'R$ ' + div.annual_dividend.toFixed(4)),
+            ),
+            h('div', { className: 'dividend-row' },
+              h('span', { className: 'label' }, 'Dividend Yield'),
+              h('span', { className: 'value' }, div.dividend_yield.toFixed(2) + '%'),
+            ),
+            h('div', { className: 'dividend-row' },
+              h('span', { className: 'label' }, 'Total Dividendos'),
+              h('span', { className: 'value' }, 'R$ ' + div.total_dividends.toFixed(2)),
+            ),
+            h('div', { className: 'dividend-row' },
+              h('span', { className: 'label' }, 'Cotas via Reinvestimento'),
+              h('span', { className: 'value' }, div.shares_from_dividends + ' cotas'),
+            ),
+          ) : null,
           h('div', { className: 'portfolio-status' },
             isCandidate ? h('span', { className: 'badge candidate' }, 'Candidato') : null,
             isValidated ? h('span', { className: 'badge validated' }, 'Validado') : null,
@@ -192,6 +228,7 @@ function App() {
   const [portfolio, setPortfolio] = useState(null);
   const [portfolioList, setPortfolioList] = useState([]);
   const [portfolioData, setPortfolioData] = useState({});
+  const [dividends, setDividends] = useState({});
   const [assets, setAssets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState('Consultando dados...');
@@ -202,16 +239,18 @@ function App() {
     setLoading(true);
     setStatus('Consultando bancos de dados...');
     try {
-      const [analysis, portfolioResult, portfolioListData] = await Promise.all([
+      const [analysis, portfolioResult, portfolioListData, dividendsData] = await Promise.all([
         getAnalysis(horizon),
         getPortfolio(horizon),
         getPortfolioList(),
+        getPortfolioDividends(),
       ]);
       setData(analysis);
       setAssets(analysis.assets || []);
       setPortfolio(portfolioResult);
       setPortfolioList(portfolioListData.tickers || []);
       setPortfolioData(portfolioListData.portfolio || {});
+      setDividends(dividendsData.dividends || {});
       setStatus('');
     } catch {
       setData(null);
@@ -219,6 +258,7 @@ function App() {
       setPortfolio(null);
       setPortfolioList([]);
       setPortfolioData({});
+      setDividends({});
       setStatus('Falha ao acessar os bancos. Verifique os servi\u00e7os e recarregue.');
     } finally {
       setLoading(false);
@@ -283,7 +323,7 @@ function App() {
   function renderPage() {
     switch (currentPage) {
       case 'portfolio':
-        return h(PortfolioPage, { portfolio, loading, horizon, portfolioList, portfolioData, onAdd: handleAddTicker, onRemove: handleRemoveTicker, onTrain: handleTrainPortfolio, job });
+        return h(PortfolioPage, { portfolio, loading, horizon, portfolioList, portfolioData, dividends, onAdd: handleAddTicker, onRemove: handleRemoveTicker, onTrain: handleTrainPortfolio, job });
       case 'assets':
         return h(AssetsPage, { assets, loading, horizon, setHorizon, status, setStatus, onFavoriteChange: updateFavorite, filters, setFilters });
       case 'training':

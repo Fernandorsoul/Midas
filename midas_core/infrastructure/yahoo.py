@@ -83,7 +83,41 @@ def fetch_history(ticker: str, period: str = "10y") -> ImportedStock:
         prices=tuple(prices),
     )
 
-def fetch_fundamentals(ticker: str) -> FundamentalData:
+def fetch_dividends(ticker: str) -> dict:
+    """Busca dados de dividendos do Yahoo Finance."""
+    yahoo_ticker = normalize_ticker(ticker)
+    try:
+        stock = yf.Ticker(yahoo_ticker)
+        info = stock.info
+        dividends = stock.dividends
+    except Exception as e:
+        raise YahooFinanceError(f"Erro ao buscar dividendos de {ticker}: {e}")
+
+    # Dividendos dos últimos12 meses
+    annual_dividend = None
+    if not dividends.empty:
+        # Somar dividendos dos últimos12 meses
+        from datetime import datetime, timedelta
+        one_year_ago = datetime.now() - timedelta(days=365)
+        recent_dividends = dividends[dividends.index >= one_year_ago]
+        if not recent_dividends.empty:
+            annual_dividend = float(recent_dividends.sum())
+
+    # Dividend yield
+    dividend_yield = info.get("dividendYield")
+    if dividend_yield is not None:
+        dividend_yield = float(dividend_yield)
+
+    # Preço atual
+    price = info.get("regularMarketPrice") or info.get("previousClose")
+    if price is not None:
+        price = float(price)
+
+    return {
+        "annual_dividend": annual_dividend,
+        "dividend_yield": dividend_yield,
+        "price": price,
+    }
     """Busca dados fundamentalistas do Yahoo Finance."""
     yahoo_ticker = normalize_ticker(ticker)
     try:

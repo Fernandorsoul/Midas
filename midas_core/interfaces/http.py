@@ -107,6 +107,9 @@ class RequestHandler(SimpleHTTPRequestHandler):
         if url.path == "/api/portfolio/list":
             self.respond(200, _get_portfolio_list())
             return
+        if url.path == "/api/portfolio/dividends":
+            self.respond(200, _get_portfolio_dividends())
+            return
         if url.path.startswith("/api/"):
             self.respond(404, {"error": "Rota não encontrada."})
         else:
@@ -253,3 +256,44 @@ def _remove_from_portfolio(ticker):
             return {"message": f"{ticker} não está na carteira.", "tickers": sorted(PORTFOLIO_TICKERS.keys())}
         del PORTFOLIO_TICKERS[ticker]
         return {"message": f"{ticker} removido da carteira.", "tickers": sorted(PORTFOLIO_TICKERS.keys())}
+
+def _get_portfolio_dividends():
+    """Retorna dados de dividendos dos ativos da carteira."""
+    from midas_core.infrastructure.yahoo import fetch_dividends, YahooFinanceError
+    
+    with PORTFOLIO_LOCK:
+        tickers = list(PORTFOLIO_TICKERS.keys())
+        quantities = PORTFOLIO_TICKERS.copy()
+    
+    if not tickers:
+        return {"dividends": {}}
+    
+    dividends = {}
+    for ticker in tickers:
+        try:
+            div_data = fetch_dividends(ticker)
+            quantity = quantities.get(ticker, 100)
+            annual_div = div_data.get("annual_dividend", 0) or 0
+            price = div_data.get("price", 0) or 0
+            dividend_yield = div_data.get("dividend_yield", 0) or 0
+            
+            # Calcular reinvestimento
+            total_dividends = annual_div * quantity
+            shares_from_dividends = int(total_dividends / price) if price > 0 else 0
+            
+            dividends[ticker] = {
+                "annual_dividend": round(annual_div, 4),
+                "dividend_yield": round(dividend_yield * 100, 2),
+                "price": round(price, 2),
+                "quantity": quantity,
+                "total_dividends": round(total_dividends, 2),
+                "shares_from_dividends": shares_from_dividends,
+                "status": "ok",
+            }
+        except (YahooFinanceError, Exception) as e:
+            dividends[ticker] = {
+                "status": "error",
+                "error": str(e),
+            }
+    
+    return {"dividends": dividends}
