@@ -9,10 +9,10 @@ from midas_core.infrastructure.yahoo import fetch_historical_fundamentals, Yahoo
 # Ano mínimo para dados fundamentalistas
 MIN_FUNDAMENTAL_YEAR = 2015
 
-def publish_dataset(horizons=(12,), source=None, mongo_repository=None, postgres_repository=None):
+def publish_dataset(horizons=(12,), source=None, tickers=None, mongo_repository=None, postgres_repository=None):
     horizons = tuple(dict.fromkeys(horizons))
     if not horizons or any(value not in SUPPORTED_HORIZONS for value in horizons):
-        raise ValueError("Horizontes aceitos: 12, 24 e 36 meses.")
+        raise ValueError("Horizontes aceitos: 6, 12, 24 e 36 meses.")
     mongo_repository = mongo_repository or MongoRepository()
     postgres_repository = postgres_repository or PostgresRepository()
 
@@ -22,7 +22,11 @@ def publish_dataset(horizons=(12,), source=None, mongo_repository=None, postgres
 
     grouped = {}
     for row in postgres_repository.training_prices(source):
-        grouped.setdefault(row["ticker"], []).append(row)
+        ticker = row["ticker"]
+        # Filtrar por tickers se especificado
+        if tickers and ticker not in tickers:
+            continue
+        grouped.setdefault(ticker, []).append(row)
     if not grouped:
         raise ValueError(f"Não há cotações da fonte {source} no PostgreSQL.")
 

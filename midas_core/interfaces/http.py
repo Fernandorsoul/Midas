@@ -29,7 +29,7 @@ def _update_training_job(**values):
     with TRAINING_LOCK:
         TRAINING_JOB.update(values)
 
-def _run_training_job(horizon):
+def _run_training_job(horizon, tickers=None):
     started_at = datetime.now(timezone.utc).isoformat()
     try:
         _update_training_job(
@@ -44,7 +44,7 @@ def _run_training_job(horizon):
             run_id=None,
             error=None,
         )
-        dataset_id, sample_count = publish_dataset((horizon,))
+        dataset_id, sample_count = publish_dataset((horizon,), tickers=tickers)
         _update_training_job(
             step="training",
             message="Treinando modelos e validando temporalmente...",
@@ -155,8 +155,8 @@ class RequestHandler(SimpleHTTPRequestHandler):
             return
         try:
             body = self._read_json()
-            horizon = body.get("horizon", 12)
-            if type(horizon) is not int or horizon not in (12, 24, 36):
+            horizon = body.get("horizon", 6)
+            if type(horizon) is not int or horizon not in (6, 12, 24, 36):
                 raise ValueError("Horizonte inválido.")
             with TRAINING_LOCK:
                 if TRAINING_JOB.get("status") == "running":
@@ -169,7 +169,9 @@ class RequestHandler(SimpleHTTPRequestHandler):
                     "message": "Treinamento enfileirado.",
                     "horizon": horizon,
                 })
-            thread = threading.Thread(target=_run_training_job, args=(horizon,), daemon=True)
+            # Treinar com ativos da carteira se especificado
+            tickers = list(PORTFOLIO_TICKERS.keys()) if PORTFOLIO_TICKERS else None
+            thread = threading.Thread(target=_run_training_job, args=(horizon, tickers), daemon=True)
             thread.start()
             self.respond(202, _training_snapshot())
         except (ValueError, UnicodeError) as error:
