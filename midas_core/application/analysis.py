@@ -37,12 +37,8 @@ def build_report(horizon, mongo_repository=None, postgres_repository=None):
         asset["price"] = float(prices[-1]["close"]) if prices else None
         asset["price_date"] = prices[-1]["price_date"].isoformat() if prices else None
         asset["source"] = prices[-1]["source"] if prices else None
-        # Buscar fundamentos históricos para o ativo
-        try:
-            fundamentals = fetch_historical_fundamentals(asset["ticker"])
-        except (YahooFinanceError, Exception):
-            fundamentals = {}
-        asset["_features"] = latest_features(month_end_series(prices), fundamentals)
+        # Não buscar fundamentos por padrão (muito lento)
+        asset["_features"] = latest_features(month_end_series(prices))
 
     metrics = artifact = run_date = None
     for run in postgres_repository.model_runs(horizon):
@@ -111,9 +107,9 @@ def build_portfolio_report(horizon, portfolio_tickers=None, mongo_repository=Non
             portfolio_tickers = []
     
     if not portfolio_tickers:
-        return {"error": "Nenhum ativo na carteira. Edite config/my-portfolio.txt"}
+        return {"portfolio": [], "portfolio_tickers": [], "horizon": horizon, "metrics": None, "model_validated": False, "model_run_date": None, "method": None}
     
-    # Gerar relatório completo
+    # Gerar relatório completo (sem fundamentos para performance)
     full_report = build_report(horizon, mongo_repository, postgres_repository)
     
     # Filtrar apenas ativos da carteira
