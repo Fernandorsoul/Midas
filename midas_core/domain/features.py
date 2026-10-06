@@ -225,11 +225,25 @@ def feature_vector(values, index, fundamentals=None, as_of_date=None):
         features["debt_to_equity_2y"] = 1.0  # Neutro se não disponível
         features["eps_growth"] = 0.0  # Neutro se não disponível
     
-    # Features macroeconômicas (desabilitadas por enquanto - API lenta)
-    features["selic"] = 10.0
-    features["ipca_12m"] = 5.0
-    features["dolar_brl"] = 5.0
-    features["desemprego"] = 10.0
+    # Features macroeconômicas (com cache)
+    if as_of_date:
+        try:
+            from midas_core.infrastructure.macro import get_macro_features
+            macro = get_macro_features(as_of_date)
+            features["selic"] = macro.get("selic", 10.0)
+            features["ipca_12m"] = macro.get("ipca_12m", 5.0)
+            features["dolar_brl"] = macro.get("dolar_brl", 5.0)
+            features["desemprego"] = macro.get("desemprego", 10.0)
+        except Exception:
+            features["selic"] = 10.0
+            features["ipca_12m"] = 5.0
+            features["dolar_brl"] = 5.0
+            features["desemprego"] = 10.0
+    else:
+        features["selic"] = 10.0
+        features["ipca_12m"] = 5.0
+        features["dolar_brl"] = 5.0
+        features["desemprego"] = 10.0
     
     return features
 

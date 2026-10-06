@@ -1,8 +1,11 @@
-"""Busca dados macroeconômicos de APIs públicas brasileiras."""
+"""Busca dados macroeconômicos de APIs públicas brasileiras com cache."""
 from __future__ import annotations
 
 import json
+import os
+import time
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -20,11 +23,51 @@ BCB_SERIES = {
     "desemprego": 24369,    # Taxa de desemprego (%)
 }
 
+# Cache de dados macroeconômicos
+CACHE_DIR = Path(__file__).parent.parent.parent / ".cache" / "macro"
+CACHE_TTL = 86400  # 24 horas
+
 class MacroDataError(RuntimeError):
     pass
 
+def _get_cache_path(series_code: int) -> Path:
+    """Retorna o caminho do cache para uma série."""
+    return CACHE_DIR / f"{series_code}.json"
+
+def _load_from_cache(series_code: int) -> list[dict] | None:
+    """Carrega dados do cache se existir e não estiver expirado."""
+    cache_path = _get_cache_path(series_code)
+    if not cache_path.exists():
+        return None
+    
+    # Verificar se o cache não expirou
+    mtime = cache_path.stat().st_mtime
+    if time.time() - mtime > CACHE_TTL:
+        return None
+    
+    try:
+        with open(cache_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except (json.JSONDecodeError, IOError):
+        return None
+
+def _save_to_cache(series_code: int, data: list[dict]):
+    """Salva dados no cache."""
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    cache_path = _get_cache_path(series_code)
+    try:
+        with open(cache_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f)
+    except IOError:
+        pass  # Falha ao salvar cache não é crítica
+
 def fetch_bcb_series(series_code: int, start_date: str = "01/01/2020") -> list[dict]:
-    """Busca série temporal do Banco Central do Brasil."""
+    """Busca série temporal do Banco Central do Brasil com cache."""
+    # Tentar carregar do cache primeiro
+    cached = _load_from_cache(series_code)
+    if cached is not None:
+        return cached
+    
     url = f"{BCB_BASE}/{series_code}/dados?formato=json&dataInicial={start_date}"
     headers = {"User-Agent": "Midas/0.3"}
     
@@ -36,6 +79,9 @@ def fetch_bcb_series(series_code: int, start_date: str = "01/01/2020") -> list[d
     
     if not isinstance(data, list):
         raise MacroDataError(f"BCB: formato inesperado para série {series_code}")
+    
+    # Salvar no cache
+    _save_to_cache(series_code, data)
     
     return data
 
