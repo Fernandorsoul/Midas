@@ -15,9 +15,11 @@ from midas_core.application.training import train
 from midas_core.config import PROJECT_ROOT, Settings
 
 WEB_ROOT = PROJECT_ROOT / "web"
-PORTFOLIO_FILE = PROJECT_ROOT / "data" / "my-portfolio.txt"
+PORTFOLIO_FILE = PROJECT_ROOT / "config" / "my-portfolio.txt"
 TRAINING_LOCK = threading.Lock()
 TRAINING_JOB = {"status": "idle", "message": "Nenhum treinamento em execução."}
+PORTFOLIO_LOCK = threading.Lock()
+PORTFOLIO_TICKERS = set()  # Armazenamento em memória
 
 def _training_snapshot():
     with TRAINING_LOCK:
@@ -206,41 +208,21 @@ def run_server():
 
 def _get_portfolio_list():
     """Retorna a lista de ativos na carteira."""
-    if not PORTFOLIO_FILE.exists():
-        return {"tickers": []}
-    tickers = []
-    for line in PORTFOLIO_FILE.read_text(encoding="utf-8").splitlines():
-        content = line.split("#", 1)[0].strip()
-        if content:
-            tickers.append(content.strip())
-    return {"tickers": tickers}
+    with PORTFOLIO_LOCK:
+        return {"tickers": sorted(PORTFOLIO_TICKERS)}
 
 def _add_to_portfolio(ticker):
     """Adiciona um ativo à carteira."""
-    tickers = _get_portfolio_list()["tickers"]
-    if ticker in tickers:
-        return {"message": f"{ticker} já está na carteira.", "tickers": tickers}
-    
-    tickers.append(ticker)
-    _save_portfolio(tickers)
-    return {"message": f"{ticker} adicionado à carteira.", "tickers": tickers}
+    with PORTFOLIO_LOCK:
+        if ticker in PORTFOLIO_TICKERS:
+            return {"message": f"{ticker} já está na carteira.", "tickers": sorted(PORTFOLIO_TICKERS)}
+        PORTFOLIO_TICKERS.add(ticker)
+        return {"message": f"{ticker} adicionado à carteira.", "tickers": sorted(PORTFOLIO_TICKERS)}
 
 def _remove_from_portfolio(ticker):
     """Remove um ativo da carteira."""
-    tickers = _get_portfolio_list()["tickers"]
-    if ticker not in tickers:
-        return {"message": f"{ticker} não está na carteira.", "tickers": tickers}
-    
-    tickers.remove(ticker)
-    _save_portfolio(tickers)
-    return {"message": f"{ticker} removido da carteira.", "tickers": tickers}
-
-def _save_portfolio(tickers):
-    """Salva a lista de ativos no arquivo."""
-    PORTFOLIO_FILE.parent.mkdir(parents=True, exist_ok=True)
-    content = "# Minha Carteira de Ações\n"
-    content += "# Adicione ativos pela interface ou edite este arquivo\n"
-    content += "# Um ticker por linha\n"
-    for ticker in tickers:
-        content += ticker + "\n"
-    PORTFOLIO_FILE.write_text(content, encoding="utf-8")
+    with PORTFOLIO_LOCK:
+        if ticker not in PORTFOLIO_TICKERS:
+            return {"message": f"{ticker} não está na carteira.", "tickers": sorted(PORTFOLIO_TICKERS)}
+        PORTFOLIO_TICKERS.remove(ticker)
+        return {"message": f"{ticker} removido da carteira.", "tickers": sorted(PORTFOLIO_TICKERS)}
