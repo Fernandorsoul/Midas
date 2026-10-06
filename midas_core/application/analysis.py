@@ -96,7 +96,7 @@ def build_portfolio_report(horizon, portfolio_tickers=None, mongo_repository=Non
     
     if portfolio_tickers is None:
         # Ler carteira do arquivo de configuração
-        portfolio_file = Path(__file__).parent.parent.parent / "config" / "my-portfolio.txt"
+        portfolio_file = Path(__file__).parent.parent.parent / "data" / "my-portfolio.txt"
         if portfolio_file.exists():
             portfolio_tickers = []
             for line in portfolio_file.read_text(encoding="utf-8").splitlines():

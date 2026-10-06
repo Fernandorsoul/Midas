@@ -15,7 +15,7 @@ from midas_core.application.training import train
 from midas_core.config import PROJECT_ROOT, Settings
 
 WEB_ROOT = PROJECT_ROOT / "web"
-PORTFOLIO_FILE = PROJECT_ROOT / "config" / "my-portfolio.txt"
+PORTFOLIO_FILE = PROJECT_ROOT / "data" / "my-portfolio.txt"
 TRAINING_LOCK = threading.Lock()
 TRAINING_JOB = {"status": "idle", "message": "Nenhum treinamento em execução."}
 
@@ -237,6 +237,7 @@ def _remove_from_portfolio(ticker):
 
 def _save_portfolio(tickers):
     """Salva a lista de ativos no arquivo."""
+    PORTFOLIO_FILE.parent.mkdir(parents=True, exist_ok=True)
     content = "# Minha Carteira de Ações\n"
     content += "# Adicione ativos pela interface ou edite este arquivo\n"
     content += "# Um ticker por linha\n"
