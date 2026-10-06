@@ -68,7 +68,7 @@ def fetch_bcb_series(series_code: int, start_date: str = "01/01/2020") -> list[d
     if cached is not None:
         return cached
     
-    url = f"{BCB_BASE}/{series_code}/dados?formato=json&dataInicial={start_date}"
+    url = f"{BCB_BASE}.{series_code}/dados?formato=json&dataInicial={start_date}"
     headers = {"User-Agent": "Midas/0.3"}
     
     try:
