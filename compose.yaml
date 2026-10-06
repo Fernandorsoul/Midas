@@ -14,6 +14,7 @@ services:
       MONGO_APP_PASSWORD: ${MONGO_APP_PASSWORD:?Execute python3 scripts/setup_env.py}
       HTTP_HOST: 0.0.0.0
       PORT: 8000
+      BRAPI_TOKEN: ${BRAPI_TOKEN:-}
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
@@ -42,6 +43,7 @@ services:
       MONGO_APP_PASSWORD: ${MONGO_APP_PASSWORD:?Execute python3 scripts/setup_env.py}
       HTTP_HOST: 0.0.0.0
       PORT: 8000
+      BRAPI_TOKEN: ${BRAPI_TOKEN:-}
     ports:
       - "127.0.0.1:8000:8000"
     volumes:
