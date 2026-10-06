@@ -106,9 +106,28 @@ def build_portfolio_report(horizon, portfolio_tickers=None, mongo_repository=Non
     
     # Filtrar apenas ativos da carteira
     portfolio_assets = []
+    found_tickers = set()
     for asset in full_report["assets"]:
         if asset["ticker"] in portfolio_tickers:
             portfolio_assets.append(asset)
+            found_tickers.add(asset["ticker"])
+    
+    # Adicionar ativos que estão na carteira mas não no banco
+    for ticker in portfolio_tickers:
+        if ticker not in found_tickers:
+            portfolio_assets.append({
+                "ticker": ticker,
+                "name": ticker,
+                "category": "stock",
+                "sector": "Não informado",
+                "favorite": False,
+                "chart": [],
+                "price": None,
+                "price_date": None,
+                "source": None,
+                "opportunity": None,
+                "status": "Sem dados - adicione via Yahoo Finance",
+            })
     
     # Ordenar por estimativa (melhor primeiro)
     portfolio_assets.sort(key=lambda x: (

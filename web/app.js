@@ -7,16 +7,18 @@ import { TrainingConsole } from './TrainingConsole.js';
 import { ValidationHistory } from './ValidationHistory.js';
 import { h, StatCard } from './ui.js';
 
-function PortfolioManager({ portfolioList, onAdd, onRemove, loading }) {
+function PortfolioManager({ portfolioList, portfolioData, onAdd, onRemove, loading }) {
   const [ticker, setTicker] = useState('');
+  const [quantity, setQuantity] = useState(100);
   const [adding, setAdding] = useState(false);
 
   async function handleAdd() {
     if (!ticker.trim()) return;
     setAdding(true);
     try {
-      await onAdd(ticker.trim().toUpperCase());
+      await onAdd(ticker.trim().toUpperCase(), quantity);
       setTicker('');
+      setQuantity(100);
     } finally {
       setAdding(false);
     }
@@ -31,6 +33,14 @@ function PortfolioManager({ portfolioList, onAdd, onRemove, loading }) {
         placeholder: 'Ex: PETR4, VALE3, ITUB4',
         className: 'portfolio-input',
         onKeyPress: e => e.key === 'Enter' && handleAdd(),
+      }),
+      h('input', {
+        type: 'number',
+        value: quantity,
+        onChange: e => setQuantity(Number(e.target.value)),
+        min: 1,
+        className: 'portfolio-input portfolio-quantity',
+        placeholder: 'Quantidade',
       }),
       h('button', {
         className: 'primary-action',
@@ -47,6 +57,7 @@ function PortfolioManager({ portfolioList, onAdd, onRemove, loading }) {
         portfolioList.map(t =>
           h('div', { key: t, className: 'portfolio-ticker-item' },
             h('span', { className: 'ticker-name' }, t),
+            h('span', { className: 'ticker-qty' }, (portfolioData?.[t] || 100) + ' cotas'),
             h('button', {
               className: 'ticker-remove',
               onClick: () => onRemove(t),
@@ -61,7 +72,7 @@ function PortfolioManager({ portfolioList, onAdd, onRemove, loading }) {
   );
 }
 
-function PortfolioView({ portfolio, loading, horizon, portfolioList, onAdd, onRemove }) {
+function PortfolioView({ portfolio, loading, horizon, portfolioList, portfolioData, onAdd, onRemove }) {
   if (loading) return h('div', { className: 'loading' }, 'Carregando carteira...');
   
   const assets = portfolio?.portfolio || [];
@@ -75,7 +86,7 @@ function PortfolioView({ portfolio, loading, horizon, portfolioList, onAdd, onRe
         h('p', null, 'Horizonte de ' + horizon + ' meses. ' + assets.length + ' ativos analisados.'),
       ),
     ),
-    h(PortfolioManager, { portfolioList, onAdd, onRemove, loading }),
+    h(PortfolioManager, { portfolioList, portfolioData, onAdd, onRemove, loading }),
     assets.length > 0 ? h('div', { className: 'portfolio-grid' },
       assets.map((asset, index) => {
         const opp = asset.opportunity;
@@ -132,6 +143,7 @@ function App() {
   const [data, setData] = useState(null);
   const [portfolio, setPortfolio] = useState(null);
   const [portfolioList, setPortfolioList] = useState([]);
+  const [portfolioData, setPortfolioData] = useState({});
   const [assets, setAssets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState('Consultando dados...');
@@ -143,21 +155,23 @@ function App() {
     setLoading(true);
     setStatus('Consultando bancos de dados...');
     try {
-      const [analysis, portfolioData, portfolioListData] = await Promise.all([
+      const [analysis, portfolioResult, portfolioListData] = await Promise.all([
         getAnalysis(horizon),
         getPortfolio(horizon),
         getPortfolioList(),
       ]);
       setData(analysis);
       setAssets(analysis.assets || []);
-      setPortfolio(portfolioData);
+      setPortfolio(portfolioResult);
       setPortfolioList(portfolioListData.tickers || []);
+      setPortfolioData(portfolioListData.portfolio || {});
       setStatus('');
     } catch {
       setData(null);
       setAssets([]);
       setPortfolio(null);
       setPortfolioList([]);
+      setPortfolioData({});
       setStatus('Falha ao acessar os bancos. Verifique os servi\u00e7os e recarregue.');
     } finally {
       setLoading(false);
@@ -173,12 +187,13 @@ function App() {
     setAssets(current => current.map(asset => asset.id === assetId ? { ...asset, favorite: saved } : asset));
   }
 
-  async function handleAddTicker(ticker) {
+  async function handleAddTicker(ticker, quantity) {
     try {
-      const result = await addToPortfolio(ticker);
+      const result = await addToPortfolio(ticker, quantity);
       setPortfolioList(result.tickers || []);
-      const portfolioData = await getPortfolio(horizon);
-      setPortfolio(portfolioData);
+      setPortfolioData(result.portfolio || {});
+      const portfolioResult = await getPortfolio(horizon);
+      setPortfolio(portfolioResult);
     } catch (error) {
       console.error('Erro ao adicionar ativo:', error);
     }
@@ -213,7 +228,7 @@ function App() {
       ),
     ),
     view === 'portfolio' ? 
-      h(PortfolioView, { portfolio, loading, horizon, portfolioList, onAdd: handleAddTicker, onRemove: handleRemoveTicker }) :
+      h(PortfolioView, { portfolio, loading, horizon, portfolioList, portfolioData, onAdd: handleAddTicker, onRemove: handleRemoveTicker }) :
       h(React.Fragment, null,
         h('section', { className: 'intro' },
           h('div', null,

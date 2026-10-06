@@ -13,10 +13,10 @@ export const getPortfolio = horizon => request(`/api/portfolio?horizon=${horizon
 
 export const getPortfolioList = () => request('/api/portfolio/list');
 
-export const addToPortfolio = ticker => request('/api/portfolio/add', {
+export const addToPortfolio = (ticker, quantity) => request('/api/portfolio/add', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ ticker }),
+  body: JSON.stringify({ ticker, quantity }),
 });
 
 export const removeFromPortfolio = ticker => request('/api/portfolio/remove', {

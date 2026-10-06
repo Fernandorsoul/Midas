@@ -19,7 +19,7 @@ PORTFOLIO_FILE = PROJECT_ROOT / "config" / "my-portfolio.txt"
 TRAINING_LOCK = threading.Lock()
 TRAINING_JOB = {"status": "idle", "message": "Nenhum treinamento em execução."}
 PORTFOLIO_LOCK = threading.Lock()
-PORTFOLIO_TICKERS = set()  # Armazenamento em memória
+PORTFOLIO_TICKERS = {}  # {ticker: quantity} - Armazenamento em memória
 
 def _training_snapshot():
     with TRAINING_LOCK:
@@ -121,9 +121,12 @@ class RequestHandler(SimpleHTTPRequestHandler):
             try:
                 body = self._read_json()
                 ticker = body.get("ticker", "").strip().upper()
+                quantity = body.get("quantity", 100)
                 if not ticker:
                     raise ValueError("Ticker inválido.")
-                result = _add_to_portfolio(ticker)
+                if not isinstance(quantity, (int, float)) or quantity <= 0:
+                    raise ValueError("Quantidade inválida.")
+                result = _add_to_portfolio(ticker, int(quantity))
                 self.respond(200, result)
             except ValueError as error:
                 self.respond(400, {"error": str(error)})
@@ -207,22 +210,44 @@ def run_server():
     server.serve_forever()
 
 def _get_portfolio_list():
-    """Retorna a lista de ativos na carteira."""
+    """Retorna a lista de ativos na carteira com quantidades."""
     with PORTFOLIO_LOCK:
-        return {"tickers": sorted(PORTFOLIO_TICKERS)}
+        return {"tickers": sorted(PORTFOLIO_TICKERS.keys()), "portfolio": PORTFOLIO_TICKERS.copy()}
 
-def _add_to_portfolio(ticker):
-    """Adiciona um ativo à carteira."""
+def _add_to_portfolio(ticker, quantity=100):
+    """Adiciona um ativo à carteira com quantidade e importa seus dados."""
     with PORTFOLIO_LOCK:
         if ticker in PORTFOLIO_TICKERS:
-            return {"message": f"{ticker} já está na carteira.", "tickers": sorted(PORTFOLIO_TICKERS)}
-        PORTFOLIO_TICKERS.add(ticker)
-        return {"message": f"{ticker} adicionado à carteira.", "tickers": sorted(PORTFOLIO_TICKERS)}
+            PORTFOLIO_TICKERS[ticker] = quantity
+            return {"message": f"{ticker} atualizado para {quantity} cotas.", "tickers": sorted(PORTFOLIO_TICKERS.keys()), "portfolio": PORTFOLIO_TICKERS.copy()}
+        PORTFOLIO_TICKERS[ticker] = quantity
+    
+    # Importar dados do ativo do Yahoo Finance em background
+    def _import_asset(ticker):
+        try:
+            from midas_core.infrastructure.yahoo import fetch_history, SOURCE
+            from midas_core.infrastructure.repositories import PostgresRepository
+            stock = fetch_history(ticker, "5y")
+            repo = PostgresRepository()
+            count = repo.save_stocks([stock], SOURCE)
+            return {"ticker": ticker, "prices": count, "status": "imported"}
+        except Exception as e:
+            return {"ticker": ticker, "error": str(e), "status": "failed"}
+    
+    import_result = _import_asset(ticker)
+    
+    with PORTFOLIO_LOCK:
+        return {
+            "message": f"{ticker} adicionado à carteira com {quantity} cotas.",
+            "tickers": sorted(PORTFOLIO_TICKERS.keys()),
+            "portfolio": PORTFOLIO_TICKERS.copy(),
+            "import": import_result,
+        }
 
 def _remove_from_portfolio(ticker):
     """Remove um ativo da carteira."""
     with PORTFOLIO_LOCK:
         if ticker not in PORTFOLIO_TICKERS:
-            return {"message": f"{ticker} não está na carteira.", "tickers": sorted(PORTFOLIO_TICKERS)}
-        PORTFOLIO_TICKERS.remove(ticker)
-        return {"message": f"{ticker} removido da carteira.", "tickers": sorted(PORTFOLIO_TICKERS)}
+            return {"message": f"{ticker} não está na carteira.", "tickers": sorted(PORTFOLIO_TICKERS.keys())}
+        del PORTFOLIO_TICKERS[ticker]
+        return {"message": f"{ticker} removido da carteira.", "tickers": sorted(PORTFOLIO_TICKERS.keys())}
