@@ -15,6 +15,7 @@ from midas_core.application.training import train
 from midas_core.config import PROJECT_ROOT, Settings
 
 WEB_ROOT = PROJECT_ROOT / "web"
+PORTFOLIO_FILE = PROJECT_ROOT / "config" / "my-portfolio.txt"
 TRAINING_LOCK = threading.Lock()
 TRAINING_JOB = {"status": "idle", "message": "Nenhum treinamento em execução."}
 
@@ -101,12 +102,45 @@ class RequestHandler(SimpleHTTPRequestHandler):
             except (psycopg.Error, PyMongoError, KeyError):
                 self.respond(503, {"error": "Não foi possível acessar os bancos de dados."})
             return
+        if url.path == "/api/portfolio/list":
+            self.respond(200, _get_portfolio_list())
+            return
         if url.path.startswith("/api/"):
             self.respond(404, {"error": "Rota não encontrada."})
         else:
             super().do_GET()
 
     def do_POST(self):
+        if self.path == "/api/portfolio/add":
+            origin = self.headers.get("Origin")
+            if origin and origin != "http://" + self.headers.get("Host", ""):
+                self.respond(403, {"error": "Origem não permitida."})
+                return
+            try:
+                body = self._read_json()
+                ticker = body.get("ticker", "").strip().upper()
+                if not ticker:
+                    raise ValueError("Ticker inválido.")
+                result = _add_to_portfolio(ticker)
+                self.respond(200, result)
+            except ValueError as error:
+                self.respond(400, {"error": str(error)})
+            return
+        if self.path == "/api/portfolio/remove":
+            origin = self.headers.get("Origin")
+            if origin and origin != "http://" + self.headers.get("Host", ""):
+                self.respond(403, {"error": "Origem não permitida."})
+                return
+            try:
+                body = self._read_json()
+                ticker = body.get("ticker", "").strip().upper()
+                if not ticker:
+                    raise ValueError("Ticker inválido.")
+                result = _remove_from_portfolio(ticker)
+                self.respond(200, result)
+            except ValueError as error:
+                self.respond(400, {"error": str(error)})
+            return
         if self.path != "/api/training":
             self.respond(404, {"error": "Rota não encontrada."})
             return
@@ -169,3 +203,43 @@ def run_server():
     server = ThreadingHTTPServer((settings.http_host, settings.http_port), RequestHandler)
     print(f"Midas disponível em http://localhost:{settings.http_port}", flush=True)
     server.serve_forever()
+
+def _get_portfolio_list():
+    """Retorna a lista de ativos na carteira."""
+    if not PORTFOLIO_FILE.exists():
+        return {"tickers": []}
+    tickers = []
+    for line in PORTFOLIO_FILE.read_text(encoding="utf-8").splitlines():
+        content = line.split("#", 1)[0].strip()
+        if content:
+            tickers.append(content.strip())
+    return {"tickers": tickers}
+
+def _add_to_portfolio(ticker):
+    """Adiciona um ativo à carteira."""
+    tickers = _get_portfolio_list()["tickers"]
+    if ticker in tickers:
+        return {"message": f"{ticker} já está na carteira.", "tickers": tickers}
+    
+    tickers.append(ticker)
+    _save_portfolio(tickers)
+    return {"message": f"{ticker} adicionado à carteira.", "tickers": tickers}
+
+def _remove_from_portfolio(ticker):
+    """Remove um ativo da carteira."""
+    tickers = _get_portfolio_list()["tickers"]
+    if ticker not in tickers:
+        return {"message": f"{ticker} não está na carteira.", "tickers": tickers}
+    
+    tickers.remove(ticker)
+    _save_portfolio(tickers)
+    return {"message": f"{ticker} removido da carteira.", "tickers": tickers}
+
+def _save_portfolio(tickers):
+    """Salva a lista de ativos no arquivo."""
+    content = "# Minha Carteira de Ações\n"
+    content += "# Adicione ativos pela interface ou edite este arquivo\n"
+    content += "# Um ticker por linha\n"
+    for ticker in tickers:
+        content += ticker + "\n"
+    PORTFOLIO_FILE.write_text(content, encoding="utf-8")

@@ -1,18 +1,3 @@
 # Minha Carteira de Ações
-# Adicione os ativos que você possui ou pretende comprar
+# Adicione ativos pela interface ou edite este arquivo
 # Um ticker por linha
-# Exemplo:
-# PETR4
-# VALE3
-# ITUB4
-
-PETR4
-VALE3
-ITUB4
-BBDC4
-BBAS3
-ABEV3
-WEGE3
-RENT3
-SUZB3
-PRIO3

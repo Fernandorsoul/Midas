@@ -11,6 +11,20 @@ export const getAnalysis = horizon => request(`/api/analysis?horizon=${horizon}`
 
 export const getPortfolio = horizon => request(`/api/portfolio?horizon=${horizon}`);
 
+export const getPortfolioList = () => request('/api/portfolio/list');
+
+export const addToPortfolio = ticker => request('/api/portfolio/add', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ ticker }),
+});
+
+export const removeFromPortfolio = ticker => request('/api/portfolio/remove', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ ticker }),
+});
+
 export const saveFavorite = (assetId, saved) => request('/api/favorites', {
   method: 'PUT',
   headers: { 'Content-Type': 'application/json' },
