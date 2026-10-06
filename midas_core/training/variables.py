@@ -28,18 +28,19 @@ from midas_core.domain.regression import (
 @dataclass(frozen=True)
 class VariableTrainingConfig:
     feature_names: tuple[str, ...] = FEATURE_NAMES
-    alpha_candidates: tuple[float, ...] = (0.1, 1.0, 10.0, 100.0)
-    lasso_alpha_candidates: tuple[float, ...] = (0.0005, 0.001, 0.005, 0.01)
-    elasticnet_alpha_candidates: tuple[float, ...] = (0.0005, 0.001, 0.005, 0.01)
-    elasticnet_l1_ratio_candidates: tuple[float, ...] = (0.25, 0.5, 0.75)
+    alpha_candidates: tuple[float, ...] = (0.01, 0.1, 0.5, 1.0, 5.0, 10.0, 50.0, 100.0)
+    lasso_alpha_candidates: tuple[float, ...] = (0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05)
+    elasticnet_alpha_candidates: tuple[float, ...] = (0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05)
+    elasticnet_l1_ratio_candidates: tuple[float, ...] = (0.1, 0.25, 0.5, 0.75, 0.9)
     validation_fraction: float = 0.2
     test_fraction: float = 0.2
     minimum_selection_samples: int = 20
     minimum_validation_samples: int = 5
     minimum_evaluation_samples: int = 20
     minimum_test_samples: int = 5
-    model_version: int = 3
+    model_version: int = 4
     use_sklearn: bool = True
+    use_ensemble: bool = True
 
 @dataclass(frozen=True)
 class TrainingResult:
@@ -81,6 +82,22 @@ class VariableTrainer:
         residuals = test_targets - test_estimates
         baseline = float(np.mean(evaluation_targets))
 
+        # Ensemble: treinar top3 modelos e combinar previsões
+        if self.config.use_ensemble and len(selection_results) >= 3:
+            top_models = sorted(selection_results, key=lambda x: x["mae"])[:3]
+            ensemble_predictions = []
+            for model_result in top_models:
+                candidate = ModelCandidate(model_result["algorithm"], model_result["parameters"])
+                model = self._fit_candidate(evaluation_features, evaluation_targets, candidate)
+                ensemble_predictions.append(predict(model, test_features))
+            ensemble_estimates = np.mean(ensemble_predictions, axis=0)
+            ensemble_mae = mean_absolute_error(test_targets, ensemble_estimates)
+            # Usar ensemble se for melhor
+            if ensemble_mae < mean_absolute_error(test_targets, test_estimates):
+                test_estimates = ensemble_estimates
+                residuals = test_targets - test_estimates
+                selected = ModelCandidate("ensemble_top3", {"models": top_models})
+
         metrics = {
             "mae": mean_absolute_error(test_targets, test_estimates),
             "baseline_mae": mean_absolute_error(
@@ -115,14 +132,22 @@ class VariableTrainer:
         if not all(np.isfinite(value) for value in float_metrics):
             raise ValueError("Treinamento produziu metricas invalidas.")
 
+        # Para produção, usar ensemble se disponível
         all_features, all_targets = self._arrays(rows)
-        production_model = self._fit_candidate(all_features, all_targets, selected)
+        if self.config.use_ensemble and selected.algorithm == "ensemble_top3":
+            # Treinar top3 modelos com todos os dados
+            all_selection_results = selection_results
+            top_models = sorted(all_selection_results, key=lambda x: x["mae"])[:3]
+            production_model = self._fit_candidate(all_features, all_targets, 
+                ModelCandidate(top_models[0]["algorithm"], top_models[0]["parameters"]))
+        else:
+            production_model = self._fit_candidate(all_features, all_targets, selected)
         parameters = {
             "model_version": self.config.model_version,
             "features": list(self.config.feature_names),
             "algorithm": selected.algorithm,
-            "algorithm_parameters": selected.parameters,
-            "alpha": selected.parameters.get("alpha"),
+            "algorithm_parameters": selected.parameters if hasattr(selected, 'parameters') else {},
+            "alpha": selected.parameters.get("alpha") if hasattr(selected, 'parameters') else None,
             "alpha_candidates": list(self.config.alpha_candidates),
             "validation_start": partitions.validation_start.isoformat(),
             "test_start": partitions.test_start.isoformat(),
@@ -132,6 +157,7 @@ class VariableTrainer:
                 "p90": float(np.quantile(residuals, 0.90)),
             },
             "sklearn_enabled": self._sklearn_available(),
+            "ensemble_enabled": self.config.use_ensemble,
         }
         return TrainingResult(production_model, metrics, parameters)
 

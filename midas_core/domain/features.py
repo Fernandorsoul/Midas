@@ -4,7 +4,10 @@ import math
 
 import numpy as np
 
-FEATURE_NAMES = ("momentum_6m", "momentum_12m", "volatility", "drawdown", "rsi_14m", "macd_signal")
+FEATURE_NAMES = (
+    "momentum_6m", "momentum_12m", "volatility", "drawdown",
+    "rsi_14m", "macd_signal", "sma_ratio_12m", "bb_position", "atr_ratio"
+)
 SUPPORTED_HORIZONS = (12, 24, 36)
 
 def month_end_series(rows):
@@ -58,6 +61,34 @@ def _macd_signal(values):
     # Simplificação: retornamos apenas o MACD Line normalizado
     return float(macd_line / values[-1])
 
+def _sma(values, period):
+    """Calcula SMA (Simple Moving Average)."""
+    if len(values) < period:
+        return None
+    return float(np.mean(values[-period:]))
+
+def _bollinger_position(values, period=20, num_std=2):
+    """Calcula posição dentro das Bandas de Bollinger (0 a 1)."""
+    if len(values) < period:
+        return None
+    sma = np.mean(values[-period:])
+    std = np.std(values[-period:])
+    upper = sma + num_std * std
+    lower = sma - num_std * std
+    if upper == lower:
+        return 0.5
+    position = (values[-1] - lower) / (upper - lower)
+    return float(max(0.0, min(1.0, position)))
+
+def _atr_ratio(values, period=14):
+    """Calcula ATR (Average True Range) normalizado pelo preço."""
+    if len(values) < period + 1:
+        return None
+    # Para dados mensais, usamos a variação absoluta
+    changes = np.abs(np.diff(values[-(period + 1):]))
+    atr = np.mean(changes)
+    return float(atr / values[-1]) if values[-1] > 0 else None
+
 def feature_vector(values, index):
     """Calcula variáveis usando exclusivamente observações até index."""
     if index < 12:
@@ -76,6 +107,15 @@ def feature_vector(values, index):
     # MACD Signal
     macd = _macd_signal(values[:index + 1])
     features["macd_signal"] = macd if macd is not None else 0.0  # Neutro se não disponível
+    # SMA ratio (preço atual / SMA12m)
+    sma = _sma(values[:index + 1], 12)
+    features["sma_ratio_12m"] = float(values[index] / sma) if sma and sma > 0 else 1.0
+    # Bollinger Bands position
+    bb = _bollinger_position(values[:index + 1], 20)
+    features["bb_position"] = bb if bb is not None else 0.5  # Neutro se não disponível
+    # ATR ratio
+    atr = _atr_ratio(values[:index + 1], 14)
+    features["atr_ratio"] = atr if atr is not None else 0.05  # Neutro se não disponível
     return features
 
 def build_samples(series, ticker, horizon):

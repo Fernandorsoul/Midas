@@ -66,6 +66,9 @@ class VariableTrainerTests(unittest.TestCase):
                     'drawdown':-0.25+asset*0.05,
                     'rsi_14m':50.0+momentum*20,
                     'macd_signal':momentum*0.5,
+                    'sma_ratio_12m':1.0+momentum*0.1,
+                    'bb_position':0.5+momentum*0.2,
+                    'atr_ratio':0.05+asset*0.01,
                 }
                 rows.append({
                     'ticker':f'TEST{asset}',
@@ -78,13 +81,13 @@ class VariableTrainerTests(unittest.TestCase):
 
     def test_trainer_returns_model_metrics_and_selected_variables(self):
         result=VariableTrainer().train(self.make_rows(),now=month(60))
-        self.assertEqual(result.parameters['model_version'],3)
+        self.assertEqual(result.parameters['model_version'],4)
         self.assertEqual(result.parameters['features'],
-            ['momentum_6m','momentum_12m','volatility','drawdown','rsi_14m','macd_signal'])
+            ['momentum_6m','momentum_12m','volatility','drawdown','rsi_14m','macd_signal','sma_ratio_12m','bb_position','atr_ratio'])
         self.assertIn('algorithm',result.parameters)
         self.assertIn('selection_results',result.parameters)
         self.assertGreater(len(result.parameters['selection_results']),1)
-        self.assertEqual(len(result.model.weights),7)
+        self.assertEqual(len(result.model.weights),10)
         self.assertGreater(result.metrics['test'],0)
         self.assertIn('rank_correlation',result.metrics)
 
