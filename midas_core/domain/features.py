@@ -225,22 +225,26 @@ def feature_vector(values, index, fundamentals=None, as_of_date=None):
         features["eps_growth"] = 0.0  # Neutro se não disponível
     return features
 
-def build_samples(series, ticker, horizon, fundamentals=None):
+def build_samples(series, ticker, horizon, fundamentals=None, min_year=None):
     if horizon not in SUPPORTED_HORIZONS:
         raise ValueError("Horizonte inválido.")
     dates = [item[0] for item in series]
     values = [item[1] for item in series]
-    return [
-        {
+    samples = []
+    for index in range(12, len(values) - horizon):
+        as_of = dates[index]
+        # Filtrar por ano mínimo se especificado
+        if min_year and as_of.year < min_year:
+            continue
+        samples.append({
             "ticker": ticker,
-            "as_of": dates[index],
+            "as_of": as_of,
             "label_end": dates[index + horizon],
             "horizon_months": horizon,
-            "features": feature_vector(values, index, fundamentals, dates[index]),
+            "features": feature_vector(values, index, fundamentals, as_of),
             "target": float(values[index + horizon] / values[index] - 1),
-        }
-        for index in range(12, len(values) - horizon)
-    ]
+        })
+    return samples
 
 def latest_features(series, fundamentals=None):
     dates = [item[0] for item in series]

@@ -6,6 +6,9 @@ from midas_core.domain.features import SUPPORTED_HORIZONS, build_samples, month_
 from midas_core.infrastructure.repositories import MongoRepository, PostgresRepository
 from midas_core.infrastructure.yahoo import fetch_historical_fundamentals, YahooFinanceError
 
+# Ano mínimo para dados fundamentalistas
+MIN_FUNDAMENTAL_YEAR = 2022
+
 def publish_dataset(horizons=(12,), source=None, mongo_repository=None, postgres_repository=None):
     horizons = tuple(dict.fromkeys(horizons))
     if not horizons or any(value not in SUPPORTED_HORIZONS for value in horizons):
@@ -39,7 +42,7 @@ def publish_dataset(horizons=(12,), source=None, mongo_repository=None, postgres
         series = month_end_series(prices)
         fundamentals = fundamentals_cache.get(ticker, {})
         for horizon in horizons:
-            generated = build_samples(series, ticker, horizon, fundamentals)
+            generated = build_samples(series, ticker, horizon, fundamentals, MIN_FUNDAMENTAL_YEAR)
             if generated:
                 covered_horizons.add(horizon)
             for sample in generated:
