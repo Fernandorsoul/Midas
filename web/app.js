@@ -72,11 +72,12 @@ function PortfolioManager({ portfolioList, portfolioData, onAdd, onRemove, loadi
   );
 }
 
-function PortfolioView({ portfolio, loading, horizon, portfolioList, portfolioData, onAdd, onRemove }) {
+function PortfolioView({ portfolio, loading, horizon, portfolioList, portfolioData, onAdd, onRemove, onTrain, job }) {
   if (loading) return h('div', { className: 'loading' }, 'Carregando carteira...');
   
   const assets = portfolio?.portfolio || [];
   const validated = portfolio?.model_validated;
+  const running = job?.status === 'queued' || job?.status === 'running';
   
   return h('section', { className: 'portfolio' },
     h('div', { className: 'section-title' },
@@ -84,6 +85,13 @@ function PortfolioView({ portfolio, loading, horizon, portfolioList, portfolioDa
         h('div', { className: 'eyebrow' }, 'MINHA CARTEIRA'),
         h('h2', null, 'An\u00e1lise dos seus ativos'),
         h('p', null, 'Horizonte de ' + horizon + ' meses. ' + assets.length + ' ativos analisados.'),
+      ),
+      h('div', { className: 'portfolio-actions' },
+        h('button', {
+          className: 'primary-action',
+          onClick: () => onTrain(horizon),
+          disabled: running || portfolioList.length === 0,
+        }, running ? 'Treinando...' : 'Treinar com Carteira'),
       ),
     ),
     h(PortfolioManager, { portfolioList, portfolioData, onAdd, onRemove, loading }),
@@ -203,10 +211,37 @@ function App() {
     try {
       const result = await removeFromPortfolio(ticker);
       setPortfolioList(result.tickers || []);
-      const portfolioData = await getPortfolio(horizon);
-      setPortfolio(portfolioData);
+      setPortfolioData(result.portfolio || {});
+      const portfolioResult = await getPortfolio(horizon);
+      setPortfolio(portfolioResult);
     } catch (error) {
       console.error('Erro ao remover ativo:', error);
+    }
+  }
+
+  async function handleTrainPortfolio(trainHorizon) {
+    try {
+      const result = await startTraining(trainHorizon);
+      setJob(result);
+      // Poll for training status
+      const timer = setInterval(async () => {
+        try {
+          const next = await getTrainingStatus();
+          setJob(next);
+          if (next.status === 'succeeded' || next.status === 'finished') {
+            clearInterval(timer);
+            // Reload portfolio after training
+            const portfolioResult = await getPortfolio(horizon);
+            setPortfolio(portfolioResult);
+          } else if (next.status === 'failed') {
+            clearInterval(timer);
+          }
+        } catch {
+          clearInterval(timer);
+        }
+      }, 2000);
+    } catch (error) {
+      console.error('Erro ao iniciar treinamento:', error);
     }
   }
 
@@ -228,7 +263,7 @@ function App() {
       ),
     ),
     view === 'portfolio' ? 
-      h(PortfolioView, { portfolio, loading, horizon, portfolioList, portfolioData, onAdd: handleAddTicker, onRemove: handleRemoveTicker }) :
+      h(PortfolioView, { portfolio, loading, horizon, portfolioList, portfolioData, onAdd: handleAddTicker, onRemove: handleRemoveTicker, onTrain: handleTrainPortfolio, job }) :
       h(React.Fragment, null,
         h('section', { className: 'intro' },
           h('div', null,
