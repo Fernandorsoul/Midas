@@ -314,6 +314,26 @@ class VariableTrainer:
         # Transformer candidate
         if keras is not None:
             candidates.append(ModelCandidate("transformer", {"epochs": 50, "batch_size": 32}))
+            candidates.append(ModelCandidate("gru", {"epochs": 50, "batch_size": 32}))
+            candidates.append(ModelCandidate("cnn", {"epochs": 50, "batch_size": 32}))
+        # Random Forest
+        try:
+            from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+            for n_estimators in (50, 100, 200):
+                for max_depth in (3, 5, 7):
+                    candidates.append(ModelCandidate(
+                        "random_forest",
+                        {"n_estimators": n_estimators, "max_depth": max_depth},
+                    ))
+            for n_estimators in (50, 100, 200):
+                for max_depth in (3, 5, 7):
+                    for learning_rate in (0.01, 0.05, 0.1):
+                        candidates.append(ModelCandidate(
+                            "gradient_boosting",
+                            {"n_estimators": n_estimators, "max_depth": max_depth, "learning_rate": learning_rate},
+                        ))
+        except ImportError:
+            pass
         return candidates
 
     def _fit_candidate(self, features, targets, candidate):
@@ -322,16 +342,16 @@ class VariableTrainer:
         if not self._sklearn_available():
             raise ValueError(f"Modelo indisponivel sem scikit-learn: {candidate.algorithm}.")
         mean, scale, standardized = self._standardize(features)
-        # XGBoost e LightGBM
-        if candidate.algorithm in ("xgboost", "lightgbm"):
+        # XGBoost, LightGBM, Random Forest, Gradient Boosting
+        if candidate.algorithm in ("xgboost", "lightgbm", "random_forest", "gradient_boosting"):
             estimator = self._estimator(candidate)
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", ConvergenceWarning)
                 estimator.fit(standardized, targets)
             return TreeModel(mean, scale, estimator)
-        # Transformer
-        if candidate.algorithm == "transformer":
-            model = self._build_transformer(standardized.shape[1])
+        # Deep learning models (Transformer, GRU, CNN)
+        if candidate.algorithm in ("transformer", "gru", "cnn"):
+            model = self._build_deep_model(standardized.shape[1], candidate.algorithm)
             model.fit(standardized, targets, epochs=candidate.parameters["epochs"],
                      batch_size=candidate.parameters["batch_size"], verbose=0)
             return TreeModel(mean, scale, model)
@@ -374,6 +394,21 @@ class VariableTrainer:
                 random_state=42,
                 verbose=-1,
             )
+        if candidate.algorithm == "random_forest":
+            from sklearn.ensemble import RandomForestRegressor
+            return RandomForestRegressor(
+                n_estimators=params["n_estimators"],
+                max_depth=params["max_depth"],
+                random_state=42,
+            )
+        if candidate.algorithm == "gradient_boosting":
+            from sklearn.ensemble import GradientBoostingRegressor
+            return GradientBoostingRegressor(
+                n_estimators=params["n_estimators"],
+                max_depth=params["max_depth"],
+                learning_rate=params["learning_rate"],
+                random_state=42,
+            )
         raise ValueError(f"Modelo desconhecido: {candidate.algorithm}.")
 
     def _standardize(self, features):
@@ -388,16 +423,35 @@ class VariableTrainer:
     def _build_transformer(self, input_dim):
         """Constrói um modelo Transformer simples para regressão."""
         inputs = keras.Input(shape=(input_dim,))
-        # Expandir dimensões para o Transformer
         x = layers.Reshape((1, input_dim))(inputs)
-        # Multi-head attention
         attention_output = layers.MultiHeadAttention(num_heads=2, key_dim=input_dim)(x, x)
         x = layers.Add()([x, attention_output])
         x = layers.LayerNormalization()(x)
-        # Feed-forward
         x = layers.Dense(input_dim * 2, activation='relu')(x)
         x = layers.Dense(input_dim)(x)
-        # Flatten e saída
+        x = layers.Flatten()(x)
+        outputs = layers.Dense(1)(x)
+        model = keras.Model(inputs, outputs)
+        model.compile(optimizer='adam', loss='mse')
+        return model
+
+    def _build_deep_model(self, input_dim, model_type):
+        """Constrói modelos deep learning (Transformer, GRU, CNN)."""
+        inputs = keras.Input(shape=(input_dim,))
+        x = layers.Reshape((1, input_dim))(inputs)
+        if model_type == "transformer":
+            attention_output = layers.MultiHeadAttention(num_heads=2, key_dim=input_dim)(x, x)
+            x = layers.Add()([x, attention_output])
+            x = layers.LayerNormalization()(x)
+            x = layers.Dense(input_dim * 2, activation='relu')(x)
+            x = layers.Dense(input_dim)(x)
+        elif model_type == "gru":
+            x = layers.GRU(input_dim, return_sequences=False)(x)
+            x = layers.Dense(input_dim, activation='relu')(x)
+        elif model_type == "cnn":
+            x = layers.Conv1D(input_dim, 1, activation='relu')(x)
+            x = layers.GlobalAveragePooling1D()(x)
+            x = layers.Dense(input_dim, activation='relu')(x)
         x = layers.Flatten()(x)
         outputs = layers.Dense(1)(x)
         model = keras.Model(inputs, outputs)
