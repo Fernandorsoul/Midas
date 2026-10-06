@@ -33,7 +33,7 @@ def _make_asset(ticker, prices, favorite=False):
 
 
 def _make_artifact(model_version=5, features=None):
-    features = features or ["momentum_6m", "momentum_12m", "volatility", "drawdown", "rsi_14m", "macd_signal", "sma_ratio_12m", "bb_position", "atr_ratio", "pe_ratio", "dividend_yield", "net_margin", "adx_14m", "stochastic_k", "williams_r", "obv_slope", "mfi_14m"]
+    features = features or ["momentum_6m", "momentum_12m", "volatility", "drawdown", "rsi_14m", "macd_signal", "sma_ratio_12m", "bb_position", "atr_ratio"]
     return {
         "_id": "run-1",
         "dataset_id": "ds-1",

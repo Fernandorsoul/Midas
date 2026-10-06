@@ -6,9 +6,7 @@ import numpy as np
 
 FEATURE_NAMES = (
     "momentum_6m", "momentum_12m", "volatility", "drawdown",
-    "rsi_14m", "macd_signal", "sma_ratio_12m", "bb_position", "atr_ratio",
-    "pe_ratio", "dividend_yield", "net_margin",
-    "adx_14m", "stochastic_k", "williams_r", "obv_slope", "mfi_14m"
+    "rsi_14m", "macd_signal", "sma_ratio_12m", "bb_position", "atr_ratio"
 )
 SUPPORTED_HORIZONS = (12, 24, 36)
 
@@ -177,26 +175,6 @@ def feature_vector(values, index, fundamentals=None):
     # ATR ratio
     atr = _atr_ratio(values[:index + 1], 14)
     features["atr_ratio"] = atr if atr is not None else 0.05  # Neutro se não disponível
-    # Novos indicadores técnicos
-    adx = _adx(values[:index + 1], 14)
-    features["adx_14m"] = adx if adx is not None else 25.0  # Neutro
-    stoch = _stochastic_k(values[:index + 1], 14)
-    features["stochastic_k"] = stoch if stoch is not None else 50.0  # Neutro
-    wr = _williams_r(values[:index + 1], 14)
-    features["williams_r"] = wr if wr is not None else -50.0  # Neutro
-    obv = _obv_slope(values[:index + 1], 10)
-    features["obv_slope"] = obv if obv is not None else 0.0  # Neutro
-    mfi = _mfi(values[:index + 1], 14)
-    features["mfi_14m"] = mfi if mfi is not None else 50.0  # Neutro
-    # Features fundamentalistas (opcionais)
-    if fundamentals:
-        features["pe_ratio"] = fundamentals.pe_ratio if fundamentals.pe_ratio is not None else 15.0  # Neutro
-        features["dividend_yield"] = fundamentals.dividend_yield if fundamentals.dividend_yield is not None else 0.03  # Neutro
-        features["net_margin"] = fundamentals.net_margin if fundamentals.net_margin is not None else 0.10  # Neutro
-    else:
-        features["pe_ratio"] = 15.0  # Neutro se não disponível
-        features["dividend_yield"] = 0.03  # Neutro se não disponível
-        features["net_margin"] = 0.10  # Neutro se não disponível
     return features
 
 def build_samples(series, ticker, horizon, fundamentals=None):
