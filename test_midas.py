@@ -72,6 +72,11 @@ class VariableTrainerTests(unittest.TestCase):
                     'pe_ratio':15.0+asset*2,
                     'dividend_yield':0.03+asset*0.01,
                     'net_margin':0.10+asset*0.02,
+                    'adx_14m':25.0+momentum*10,
+                    'stochastic_k':50.0+momentum*20,
+                    'williams_r':-50.0+momentum*20,
+                    'obv_slope':momentum*0.5,
+                    'mfi_14m':50.0+momentum*15,
                 }
                 rows.append({
                     'ticker':f'TEST{asset}',
@@ -86,11 +91,11 @@ class VariableTrainerTests(unittest.TestCase):
         result=VariableTrainer().train(self.make_rows(),now=month(60))
         self.assertEqual(result.parameters['model_version'],5)
         self.assertEqual(result.parameters['features'],
-            ['momentum_6m','momentum_12m','volatility','drawdown','rsi_14m','macd_signal','sma_ratio_12m','bb_position','atr_ratio','pe_ratio','dividend_yield','net_margin'])
+            ['momentum_6m','momentum_12m','volatility','drawdown','rsi_14m','macd_signal','sma_ratio_12m','bb_position','atr_ratio','pe_ratio','dividend_yield','net_margin','adx_14m','stochastic_k','williams_r','obv_slope','mfi_14m'])
         self.assertIn('algorithm',result.parameters)
         self.assertIn('selection_results',result.parameters)
         self.assertGreater(len(result.parameters['selection_results']),1)
-        self.assertEqual(len(result.model.weights),13)
+        self.assertEqual(len(result.model.weights),18)
         self.assertGreater(result.metrics['test'],0)
         self.assertIn('rank_correlation',result.metrics)
 

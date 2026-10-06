@@ -7,7 +7,8 @@ import numpy as np
 FEATURE_NAMES = (
     "momentum_6m", "momentum_12m", "volatility", "drawdown",
     "rsi_14m", "macd_signal", "sma_ratio_12m", "bb_position", "atr_ratio",
-    "pe_ratio", "dividend_yield", "net_margin"
+    "pe_ratio", "dividend_yield", "net_margin",
+    "adx_14m", "stochastic_k", "williams_r", "obv_slope", "mfi_14m"
 )
 SUPPORTED_HORIZONS = (12, 24, 36)
 
@@ -90,6 +91,65 @@ def _atr_ratio(values, period=14):
     atr = np.mean(changes)
     return float(atr / values[-1]) if values[-1] > 0 else None
 
+def _adx(values, period=14):
+    """Calcula ADX (Average Directional Index)."""
+    if len(values) < period * 2:
+        return None
+    # Simplificação: usamos a direção das variações
+    deltas = np.diff(values[-(period * 2):])
+    up_moves = np.where(deltas > 0, deltas, 0)
+    down_moves = np.where(deltas < 0, -deltas, 0)
+    avg_up = np.mean(up_moves[-period:])
+    avg_down = np.mean(down_moves[-period:])
+    if avg_up + avg_down == 0:
+        return 0.0
+    dx = abs(avg_up - avg_down) / (avg_up + avg_down) * 100
+    return float(dx)
+
+def _stochastic_k(values, period=14):
+    """Calcula Stochastic %K."""
+    if len(values) < period:
+        return None
+    window = values[-period:]
+    lowest = np.min(window)
+    highest = np.max(window)
+    if highest == lowest:
+        return 50.0
+    k = (values[-1] - lowest) / (highest - lowest) * 100
+    return float(max(0.0, min(100.0, k)))
+
+def _williams_r(values, period=14):
+    """Calcula Williams %R."""
+    if len(values) < period:
+        return None
+    window = values[-period:]
+    lowest = np.min(window)
+    highest = np.max(window)
+    if highest == lowest:
+        return -50.0
+    r = (highest - values[-1]) / (highest - lowest) * -100
+    return float(max(-100.0, min(0.0, r)))
+
+def _obv_slope(values, period=10):
+    """Calcula inclinação do OBV (simplificado)."""
+    if len(values) < period + 1:
+        return None
+    # Simplificação: usamos a direção do preço como proxy
+    returns = np.diff(values[-(period + 1):])
+    up_days = np.sum(returns > 0)
+    down_days = np.sum(returns < 0)
+    if up_days + down_days == 0:
+        return 0.0
+    slope = (up_days - down_days) / (up_days + down_days)
+    return float(slope)
+
+def _mfi(values, period=14):
+    """Calcula MFI (Money Flow Index) simplificado."""
+    if len(values) < period + 1:
+        return None
+    # Simplificação: usamos RSI como proxy
+    return _rsi(values, period)
+
 def feature_vector(values, index, fundamentals=None):
     """Calcula variáveis usando exclusivamente observações até index."""
     if index < 12:
@@ -117,6 +177,17 @@ def feature_vector(values, index, fundamentals=None):
     # ATR ratio
     atr = _atr_ratio(values[:index + 1], 14)
     features["atr_ratio"] = atr if atr is not None else 0.05  # Neutro se não disponível
+    # Novos indicadores técnicos
+    adx = _adx(values[:index + 1], 14)
+    features["adx_14m"] = adx if adx is not None else 25.0  # Neutro
+    stoch = _stochastic_k(values[:index + 1], 14)
+    features["stochastic_k"] = stoch if stoch is not None else 50.0  # Neutro
+    wr = _williams_r(values[:index + 1], 14)
+    features["williams_r"] = wr if wr is not None else -50.0  # Neutro
+    obv = _obv_slope(values[:index + 1], 10)
+    features["obv_slope"] = obv if obv is not None else 0.0  # Neutro
+    mfi = _mfi(values[:index + 1], 14)
+    features["mfi_14m"] = mfi if mfi is not None else 50.0  # Neutro
     # Features fundamentalistas (opcionais)
     if fundamentals:
         features["pe_ratio"] = fundamentals.pe_ratio if fundamentals.pe_ratio is not None else 15.0  # Neutro
