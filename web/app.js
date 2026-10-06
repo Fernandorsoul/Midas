@@ -1,4 +1,4 @@
-import { getAnalysis, getPortfolio, getPortfolioList, addToPortfolio, removeFromPortfolio, getTrainingStatus } from './api.js';
+import { getAnalysis, getPortfolio, getPortfolioList, addToPortfolio, removeFromPortfolio, startTraining, getTrainingStatus } from './api.js';
 import { AssetExplorer } from './AssetExplorer.js';
 import { EvaluationPanel } from './EvaluationPanel.js';
 import { Layout } from './layout.js';
@@ -7,6 +7,7 @@ import { TrainingConsole } from './TrainingConsole.js';
 import { ValidationHistory } from './ValidationHistory.js';
 import { h, StatCard } from './ui.js';
 
+// Portfolio Manager Component
 function PortfolioManager({ portfolioList, portfolioData, onAdd, onRemove, loading }) {
   const [ticker, setTicker] = useState('');
   const [quantity, setQuantity] = useState(100);
@@ -72,7 +73,8 @@ function PortfolioManager({ portfolioList, portfolioData, onAdd, onRemove, loadi
   );
 }
 
-function PortfolioView({ portfolio, loading, horizon, portfolioList, portfolioData, onAdd, onRemove, onTrain, job }) {
+// Portfolio Page
+function PortfolioPage({ portfolio, loading, horizon, portfolioList, portfolioData, onAdd, onRemove, onTrain, job }) {
   if (loading) return h('div', { className: 'loading' }, 'Carregando carteira...');
   
   const assets = portfolio?.portfolio || [];
@@ -146,7 +148,45 @@ function PortfolioView({ portfolio, loading, horizon, portfolioList, portfolioDa
   );
 }
 
+// All Assets Page
+function AssetsPage({ assets, loading, horizon, setHorizon, status, setStatus, onFavoriteChange, filters, setFilters }) {
+  const candidateCount = useMemo(() => assets.filter(asset => asset.opportunity?.candidate).length, [assets]);
+
+  return h(React.Fragment, null,
+    h('section', { className: 'intro' },
+      h('div', null,
+        h('div', { className: 'eyebrow' }, 'PRE\u00c7O, TEND\u00caNCIA E RISCO'),
+        h('h1', null, 'Oportunidades com', h('br'), 'evid\u00eancia vis\u00edvel', h('span', null, '.')),
+        h('p', null, 'Treino temporal, previs\u00e3o de 6 meses e compara\u00e7\u00e3o', h('br'), 'com o retorno real observado posteriormente.'),
+      ),
+      h('div', { className: 'orbit', 'aria-hidden': 'true' }, h('span', null, '\u2726'), h('small', null, 'M\u00c9DIO & LONGO PRAZO')),
+    ),
+    h('div', { className: 'notice' }, h('strong', null, 'Ranking experimental, n\u00e3o recomenda\u00e7\u00e3o.'), ' O modelo n\u00e3o v\u00ea o retorno futuro durante o treino. Um sinal s\u00f3 \u00e9 liberado quando supera a refer\u00eancia por pelo menos 2% e apresenta correla\u00e7\u00e3o de ranking m\u00ednima de 0,10.'),
+    h('section', { className: 'stats' },
+      h(StatCard, { label: 'Ativos analisados', value: loading ? '\u2014' : String(assets.length), note: 'Universo atual do PostgreSQL' }),
+      h(StatCard, { label: 'Horizonte do modelo', value: horizon + ' meses', note: 'Retorno ajustado acumulado' }),
+      h(StatCard, { label: 'Candidatos atuais', value: loading ? '\u2014' : String(candidateCount), note: 'Somente modelo validado' }),
+    ),
+    h(AssetExplorer, { assets, filters, setFilters, horizon, setHorizon, status, setStatus, onFavoriteChange }),
+  );
+}
+
+// Training Page
+function TrainingPage({ horizon, job, setJob, onFinished }) {
+  return h(TrainingConsole, { horizon, job, setJob, onFinished });
+}
+
+// Validation Page
+function ValidationPage({ data }) {
+  return h(React.Fragment, null,
+    h(ValidationHistory, { predictions: data?.metrics?.predictions || [] }),
+    h(EvaluationPanel, { data }),
+  );
+}
+
+// Main App
 function App() {
+  const [currentPage, setCurrentPage] = useState('portfolio');
   const [horizon, setHorizon] = useState(6);
   const [data, setData] = useState(null);
   const [portfolio, setPortfolio] = useState(null);
@@ -157,7 +197,6 @@ function App() {
   const [status, setStatus] = useState('Consultando dados...');
   const [job, setJob] = useState({ status: 'idle', message: 'Nenhum treinamento em execu\u00e7\u00e3o.' });
   const [filters, setFilters] = useState({ query: '', category: '', sector: '', saved: false, candidates: false });
-  const [view, setView] = useState('portfolio');
 
   async function load() {
     setLoading(true);
@@ -188,8 +227,6 @@ function App() {
 
   useEffect(() => { load(); }, [horizon]);
   useEffect(() => { getTrainingStatus().then(setJob).catch(() => {}); }, []);
-
-  const candidateCount = useMemo(() => assets.filter(asset => asset.opportunity?.candidate).length, [assets]);
 
   function updateFavorite(assetId, saved) {
     setAssets(current => current.map(asset => asset.id === assetId ? { ...asset, favorite: saved } : asset));
@@ -223,14 +260,12 @@ function App() {
     try {
       const result = await startTraining(trainHorizon);
       setJob(result);
-      // Poll for training status
       const timer = setInterval(async () => {
         try {
           const next = await getTrainingStatus();
           setJob(next);
           if (next.status === 'succeeded' || next.status === 'finished') {
             clearInterval(timer);
-            // Reload portfolio after training
             const portfolioResult = await getPortfolio(horizon);
             setPortfolio(portfolioResult);
           } else if (next.status === 'failed') {
@@ -245,45 +280,31 @@ function App() {
     }
   }
 
-  return h(Layout, null,
+  function renderPage() {
+    switch (currentPage) {
+      case 'portfolio':
+        return h(PortfolioPage, { portfolio, loading, horizon, portfolioList, portfolioData, onAdd: handleAddTicker, onRemove: handleRemoveTicker, onTrain: handleTrainPortfolio, job });
+      case 'assets':
+        return h(AssetsPage, { assets, loading, horizon, setHorizon, status, setStatus, onFavoriteChange: updateFavorite, filters, setFilters });
+      case 'training':
+        return h(TrainingPage, { horizon, job, setJob, onFinished: load });
+      case 'validation':
+        return h(ValidationPage, { data });
+      case 'method':
+        return h(EvaluationPanel, { data });
+      default:
+        return h(PortfolioPage, { portfolio, loading, horizon, portfolioList, portfolioData, onAdd: handleAddTicker, onRemove: handleRemoveTicker, onTrain: handleTrainPortfolio, job });
+    }
+  }
+
+  return h(Layout, { currentPage, onNavigate: setCurrentPage },
     h('header', null, 
       h('span', null, 'Seu observat\u00f3rio de investimentos'), 
       h('div', { className: 'header-actions' },
         h('span', { className: 'pill' }, '\u25cf Dados Yahoo Finance'),
-        h('div', { className: 'view-toggle' },
-          h('button', { 
-            className: 'toggle-btn' + (view === 'portfolio' ? ' active' : ''),
-            onClick: () => setView('portfolio')
-          }, 'Minha Carteira'),
-          h('button', { 
-            className: 'toggle-btn' + (view === 'all' ? ' active' : ''),
-            onClick: () => setView('all')
-          }, 'Todos os Ativos'),
-        ),
       ),
     ),
-    view === 'portfolio' ? 
-      h(PortfolioView, { portfolio, loading, horizon, portfolioList, portfolioData, onAdd: handleAddTicker, onRemove: handleRemoveTicker, onTrain: handleTrainPortfolio, job }) :
-      h(React.Fragment, null,
-        h('section', { className: 'intro' },
-          h('div', null,
-            h('div', { className: 'eyebrow' }, 'PRE\u00c7O, TEND\u00caNCIA E RISCO'),
-            h('h1', null, 'Oportunidades com', h('br'), 'evid\u00eancia vis\u00edvel', h('span', null, '.')),
-            h('p', null, 'Treino temporal, previs\u00e3o de 6 meses e compara\u00e7\u00e3o', h('br'), 'com o retorno real observado posteriormente.'),
-          ),
-          h('div', { className: 'orbit', 'aria-hidden': 'true' }, h('span', null, '\u2726'), h('small', null, 'M\u00c9DIO & LONGO PRAZO')),
-        ),
-        h('div', { className: 'notice' }, h('strong', null, 'Ranking experimental, n\u00e3o recomenda\u00e7\u00e3o.'), ' O modelo n\u00e3o v\u00ea o retorno futuro durante o treino. Um sinal s\u00f3 \u00e9 liberado quando supera a refer\u00eancia por pelo menos 2% e apresenta correla\u00e7\u00e3o de ranking m\u00ednima de 0,10.'),
-        h('section', { className: 'stats' },
-          h(StatCard, { label: 'Ativos analisados', value: loading ? '\u2014' : String(assets.length), note: 'Universo atual do PostgreSQL' }),
-          h(StatCard, { label: 'Horizonte do modelo', value: horizon + ' meses', note: 'Retorno ajustado acumulado' }),
-          h(StatCard, { label: 'Candidatos atuais', value: loading ? '\u2014' : String(candidateCount), note: 'Somente modelo validado' }),
-        ),
-        h(AssetExplorer, { assets, filters, setFilters, horizon, setHorizon, status, setStatus, onFavoriteChange: updateFavorite }),
-      ),
-    h(TrainingConsole, { horizon, job, setJob, onFinished: load }),
-    h(ValidationHistory, { predictions: data?.metrics?.predictions || [] }),
-    h(EvaluationPanel, { data }),
+    renderPage(),
     h('footer', null, 'MIDAS ', h('span', null, 'Pesquisa antes da decis\u00e3o. Paci\u00eancia antes do resultado.')),
   );
 }
