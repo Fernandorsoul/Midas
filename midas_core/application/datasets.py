@@ -7,7 +7,7 @@ from midas_core.infrastructure.repositories import MongoRepository, PostgresRepo
 from midas_core.infrastructure.yahoo import fetch_historical_fundamentals, YahooFinanceError
 
 # Ano mínimo para dados fundamentalistas
-MIN_FUNDAMENTAL_YEAR = 2022
+MIN_FUNDAMENTAL_YEAR = 2015
 
 def publish_dataset(horizons=(12,), source=None, mongo_repository=None, postgres_repository=None):
     horizons = tuple(dict.fromkeys(horizons))

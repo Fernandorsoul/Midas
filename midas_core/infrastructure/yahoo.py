@@ -110,83 +110,100 @@ def fetch_fundamentals(ticker: str) -> FundamentalData:
 def fetch_historical_fundamentals(ticker: str) -> dict:
     """Busca dados fundamentalistas históricos do Yahoo Finance.
     
-    Retorna um dicionário com dados anuais dos últimos5 anos.
+    Retorna um dicionário com dados anuais e trimestrais dos últimos10 anos.
     """
     yahoo_ticker = normalize_ticker(ticker)
     try:
         stock = yf.Ticker(yahoo_ticker)
         financials = stock.financials
         balance_sheet = stock.balance_sheet
+        quarterly_financials = stock.quarterly_financials
+        quarterly_balance_sheet = stock.quarterly_balance_sheet
     except Exception as e:
         raise YahooFinanceError(f"Erro ao buscar fundamentos históricos de {ticker}: {e}")
 
-    if financials.empty or balance_sheet.empty:
+    if financials.empty and quarterly_financials.empty:
         return {}
 
     result = {}
+    
+    # Processar dados anuais
     for date in financials.columns:
         year = date.year
-        if year <2020:  # Limitar a5 anos
+        if year < 2015:  # Limitar a10 anos
             continue
-        
-        # Lucro líquido
-        net_income = None
-        if "Net Income" in financials.index:
-            val = financials.loc["Net Income", date]
-            if not _is_nan(val):
-                net_income = float(val)
-        
-        # Receita
-        revenue = None
-        if "Total Revenue" in financials.index:
-            val = financials.loc["Total Revenue", date]
-            if not _is_nan(val):
-                revenue = float(val)
-        
-        # Patrimônio líquido
-        equity = None
-        if "Stockholders Equity" in balance_sheet.index:
-            val = balance_sheet.loc["Stockholders Equity", date]
-            if not _is_nan(val):
-                equity = float(val)
-        
-        # Calcular métricas
-        net_margin = None
-        if net_income and revenue and revenue > 0:
-            net_margin = net_income / revenue
-        
-        roe = None
-        if net_income and equity and equity > 0:
-            roe = net_income / equity
-        
-        # Dívida/Patrimônio
-        debt_to_equity = None
-        total_debt = None
-        if "Total Debt" in balance_sheet.index:
-            val = balance_sheet.loc["Total Debt", date]
-            if not _is_nan(val):
-                total_debt = float(val)
-        if total_debt and equity and equity > 0:
-            debt_to_equity = total_debt / equity
-        
-        # Lucro por ação (aproximado)
-        eps = None
-        if "Basic EPS" in financials.index:
-            val = financials.loc["Basic EPS", date]
-            if not _is_nan(val):
-                eps = float(val)
-        
-        result[year] = {
-            "net_margin": net_margin,
-            "roe": roe,
-            "net_income": net_income,
-            "revenue": revenue,
-            "equity": equity,
-            "debt_to_equity": debt_to_equity,
-            "eps": eps,
-        }
+        _process_financial_data(result, year, financials, balance_sheet, date)
+    
+    # Processar dados trimestrais (para anos não cobertos pelos anuais)
+    if quarterly_financials is not None and not quarterly_financials.empty:
+        for date in quarterly_financials.columns:
+            year = date.year
+            if year < 2015:  # Limitar a10 anos
+                continue
+            # Só usar trimestral se não tiver anual para aquele ano
+            if year not in result:
+                _process_financial_data(result, year, quarterly_financials, quarterly_balance_sheet, date)
     
     return result
+
+def _process_financial_data(result, year, financials, balance_sheet, date):
+    """Processa dados financeiros de uma data específica."""
+    # Lucro líquido
+    net_income = None
+    if "Net Income" in financials.index:
+        val = financials.loc["Net Income", date]
+        if not _is_nan(val):
+            net_income = float(val)
+    
+    # Receita
+    revenue = None
+    if "Total Revenue" in financials.index:
+        val = financials.loc["Total Revenue", date]
+        if not _is_nan(val):
+            revenue = float(val)
+    
+    # Patrimônio líquido
+    equity = None
+    if "Stockholders Equity" in balance_sheet.index:
+        val = balance_sheet.loc["Stockholders Equity", date]
+        if not _is_nan(val):
+            equity = float(val)
+    
+    # Calcular métricas
+    net_margin = None
+    if net_income and revenue and revenue > 0:
+        net_margin = net_income / revenue
+    
+    roe = None
+    if net_income and equity and equity > 0:
+        roe = net_income / equity
+    
+    # Dívida/Patrimônio
+    debt_to_equity = None
+    total_debt = None
+    if "Total Debt" in balance_sheet.index:
+        val = balance_sheet.loc["Total Debt", date]
+        if not _is_nan(val):
+            total_debt = float(val)
+    if total_debt and equity and equity > 0:
+        debt_to_equity = total_debt / equity
+    
+    # Lucro por ação (aproximado)
+    eps = None
+    if "Basic EPS" in financials.index:
+        val = financials.loc["Basic EPS", date]
+        if not _is_nan(val):
+            eps = float(val)
+    
+    result[year] = {
+        "net_margin": net_margin,
+        "roe": roe,
+        "net_income": net_income,
+        "revenue": revenue,
+        "equity": equity,
+        "debt_to_equity": debt_to_equity,
+        "eps": eps,
+    }
 
 def _is_nan(value):
     """Verifica se um valor é NaN."""
