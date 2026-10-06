@@ -25,8 +25,8 @@ def main():
     print("Fontes: Yahoo Finance (max), brapi.dev (max)")
     print()
     
-    # Enriquecer dados
-    enriched = enrich_all_stocks(tickers)
+    # Enriquecer dados (apenas últimos5 anos)
+    enriched = enrich_all_stocks(tickers, period="5y")
     
     if not enriched:
         print("Nenhum ativo foi enriquecido.")

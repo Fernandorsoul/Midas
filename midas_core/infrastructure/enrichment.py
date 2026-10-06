@@ -148,7 +148,7 @@ def merge_prices(existing: list[PricePoint], new: list[PricePoint]) -> list[Pric
     
     return sorted(by_date.values(), key=lambda p: p.price_date)
 
-def enrich_stock_data(ticker: str, existing_prices: list[PricePoint] = None) -> ImportedStock:
+def enrich_stock_data(ticker: str, existing_prices: list[PricePoint] = None, period: str = "5y") -> ImportedStock:
     """Enriquece dados de um ativo buscando de múltiplas fontes."""
     existing_prices = existing_prices or []
     all_prices = list(existing_prices)
@@ -157,14 +157,14 @@ def enrich_stock_data(ticker: str, existing_prices: list[PricePoint] = None) -> 
     # Tentar Yahoo Finance (já implementado)
     try:
         from midas_core.infrastructure.yahoo import fetch_history
-        stock = fetch_history(ticker, "max")
+        stock = fetch_history(ticker, period)
         all_prices = merge_prices(all_prices, list(stock.prices))
     except Exception as e:
         errors.append(f"Yahoo Finance: {e}")
     
     # Tentar brapi.dev
     try:
-        brapi_prices = fetch_brapi_historical(ticker, period="max")
+        brapi_prices = fetch_brapi_historical(ticker, period=period)
         all_prices = merge_prices(all_prices, brapi_prices)
     except DataEnrichmentError as e:
         errors.append(f"brapi.dev: {e}")
@@ -188,14 +188,14 @@ def enrich_stock_data(ticker: str, existing_prices: list[PricePoint] = None) -> 
         prices=tuple(all_prices),
     )
 
-def enrich_all_stocks(tickers: list[str]) -> list[ImportedStock]:
+def enrich_all_stocks(tickers: list[str], period: str = "5y") -> list[ImportedStock]:
     """Enriquece dados de múltiplos ativos."""
     enriched = []
     errors = []
     
     for ticker in tickers:
         try:
-            stock = enrich_stock_data(ticker)
+            stock = enrich_stock_data(ticker, period=period)
             enriched.append(stock)
             print(f"  {ticker}: {len(stock.prices)} preços")
         except DataEnrichmentError as e:
