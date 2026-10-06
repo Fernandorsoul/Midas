@@ -60,6 +60,7 @@ class VariableTrainerTests(unittest.TestCase):
             for asset in range(4):
                 momentum=(index-20)/100 + asset/50
                 features={
+                    'momentum_3m':momentum*0.5,
                     'momentum_6m':momentum,
                     'momentum_12m':momentum*1.2,
                     'volatility':0.15+asset*0.04,
@@ -73,6 +74,10 @@ class VariableTrainerTests(unittest.TestCase):
                     'net_margin_2y':0.08+asset*0.02,
                     'roe_1y':0.15+asset*0.03,
                     'roe_2y':0.12+asset*0.03,
+                    'pe_ratio_1y':15.0+asset*2,
+                    'pe_ratio_2y':12.0+asset*2,
+                    'dividend_yield_1y':0.03+asset*0.01,
+                    'dividend_yield_2y':0.02+asset*0.01,
                 }
                 rows.append({
                     'ticker':f'TEST{asset}',
@@ -87,18 +92,18 @@ class VariableTrainerTests(unittest.TestCase):
         result=VariableTrainer().train(self.make_rows(),now=month(60))
         self.assertEqual(result.parameters['model_version'],5)
         self.assertEqual(result.parameters['features'],
-            ['momentum_6m','momentum_12m','volatility','drawdown','rsi_14m','macd_signal','sma_ratio_12m','bb_position','atr_ratio','net_margin_1y','net_margin_2y','roe_1y','roe_2y'])
+            ['momentum_3m','momentum_6m','momentum_12m','volatility','drawdown','rsi_14m','macd_signal','sma_ratio_12m','bb_position','atr_ratio','net_margin_1y','net_margin_2y','roe_1y','roe_2y','pe_ratio_1y','pe_ratio_2y','dividend_yield_1y','dividend_yield_2y'])
         self.assertIn('algorithm',result.parameters)
         self.assertIn('selection_results',result.parameters)
         self.assertGreater(len(result.parameters['selection_results']),1)
-        self.assertEqual(len(result.model.weights),14)
+        self.assertEqual(len(result.model.weights),19)
         self.assertGreater(result.metrics['test'],0)
         self.assertIn('rank_correlation',result.metrics)
 
     def test_trainer_rejects_missing_variable(self):
         rows=self.make_rows()
-        del rows[0]['features']['drawdown']
-        with self.assertRaisesRegex(ValueError,'Variavel ausente: drawdown'):
+        del rows[0]['features']['momentum_3m']
+        with self.assertRaisesRegex(ValueError,'Variavel ausente: momentum_3m'):
             VariableTrainer().train(rows,now=month(60))
 
 if __name__=='__main__': unittest.main()

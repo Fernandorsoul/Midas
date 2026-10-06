@@ -55,7 +55,7 @@ def import_yahoo_main():
 
 def dataset_main():
     parser = argparse.ArgumentParser(description="Cria dataset mensal e treina o modelo do Midas.")
-    parser.add_argument("--horizon", type=int, action="append", choices=(12, 24, 36))
+    parser.add_argument("--horizon", type=int, action="append", choices=(6, 12, 24, 36))
     parser.add_argument("--source", help="Fonte dos dados (brapi.dev, yahoo.finance). Padrão: automático")
     arguments = parser.parse_args()
     horizons = tuple(arguments.horizon or [12])
@@ -67,6 +67,6 @@ def dataset_main():
 def training_main():
     parser = argparse.ArgumentParser(description="Treina um snapshot existente.")
     parser.add_argument("dataset_id")
-    parser.add_argument("--horizon", type=int, choices=(12, 24, 36), default=12)
+    parser.add_argument("--horizon", type=int, choices=(6, 12, 24, 36), default=12)
     arguments = parser.parse_args()
     print("Experimento salvo:", train(arguments.dataset_id, arguments.horizon))

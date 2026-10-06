@@ -5,11 +5,12 @@ import math
 import numpy as np
 
 FEATURE_NAMES = (
-    "momentum_6m", "momentum_12m", "volatility", "drawdown",
+    "momentum_3m", "momentum_6m", "momentum_12m", "volatility", "drawdown",
     "rsi_14m", "macd_signal", "sma_ratio_12m", "bb_position", "atr_ratio",
-    "net_margin_1y", "net_margin_2y", "roe_1y", "roe_2y"
+    "net_margin_1y", "net_margin_2y", "roe_1y", "roe_2y",
+    "pe_ratio_1y", "pe_ratio_2y", "dividend_yield_1y", "dividend_yield_2y"
 )
-SUPPORTED_HORIZONS = (12, 24, 36)
+SUPPORTED_HORIZONS = (6, 12, 24, 36)
 
 def month_end_series(rows):
     """Retorna o último preço ajustado disponível de cada mês."""
@@ -156,6 +157,7 @@ def feature_vector(values, index, fundamentals=None, as_of_date=None):
     window = np.asarray(values[index - 12:index + 1], dtype=float)
     returns = np.diff(np.log(window))
     features = {
+        "momentum_3m": float(values[index] / values[index - 3] - 1) if index >= 3 else 0.0,
         "momentum_6m": float(values[index] / values[index - 6] - 1),
         "momentum_12m": float(values[index] / values[index - 12] - 1),
         "volatility": float(np.std(returns) * math.sqrt(12)),
@@ -189,11 +191,23 @@ def feature_vector(values, index, fundamentals=None, as_of_date=None):
         features["roe_1y"] = prev_year.get("roe") if prev_year.get("roe") is not None else 0.15
         # ROE de2 anos atrás
         features["roe_2y"] = prev2_year.get("roe") if prev2_year.get("roe") is not None else 0.15
+        # P/L do ano anterior (calculado se possível)
+        features["pe_ratio_1y"] = prev_year.get("pe_ratio") if prev_year.get("pe_ratio") is not None else 15.0
+        # P/L de2 anos atrás
+        features["pe_ratio_2y"] = prev2_year.get("pe_ratio") if prev2_year.get("pe_ratio") is not None else 15.0
+        # Dividend Yield do ano anterior
+        features["dividend_yield_1y"] = prev_year.get("dividend_yield") if prev_year.get("dividend_yield") is not None else 0.03
+        # Dividend Yield de2 anos atrás
+        features["dividend_yield_2y"] = prev2_year.get("dividend_yield") if prev2_year.get("dividend_yield") is not None else 0.03
     else:
         features["net_margin_1y"] = 0.10  # Neutro se não disponível
         features["net_margin_2y"] = 0.10  # Neutro se não disponível
         features["roe_1y"] = 0.15  # Neutro se não disponível
         features["roe_2y"] = 0.15  # Neutro se não disponível
+        features["pe_ratio_1y"] = 15.0  # Neutro se não disponível
+        features["pe_ratio_2y"] = 15.0  # Neutro se não disponível
+        features["dividend_yield_1y"] = 0.03  # Neutro se não disponível
+        features["dividend_yield_2y"] = 0.03  # Neutro se não disponível
     return features
 
 def build_samples(series, ticker, horizon, fundamentals=None):

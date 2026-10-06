@@ -36,7 +36,7 @@ CREATE TABLE model_runs (
     id uuid PRIMARY KEY,
     dataset_id text NOT NULL,
     algorithm text NOT NULL,
-    horizon_months integer NOT NULL CHECK (horizon_months IN (12,24,36)),
+    horizon_months integer NOT NULL CHECK (horizon_months IN (6,12,24,36)),
     metrics jsonb NOT NULL DEFAULT '{}',
     parameters jsonb NOT NULL DEFAULT '{}',
     created_at timestamptz NOT NULL DEFAULT now()

@@ -10,7 +10,7 @@ training.datasets.createIndex({name:1, version:1}, {unique:true});
 training.createCollection('training_samples', {validator: {$jsonSchema: {
   bsonType:'object', required:['dataset_id','ticker','as_of','label_end','horizon_months','features','target'],
   properties:{dataset_id:{bsonType:'string'}, ticker:{bsonType:'string'},
-    as_of:{bsonType:'date'}, label_end:{bsonType:'date'}, horizon_months:{enum:[12,24,36]},
+    as_of:{bsonType:'date'}, label_end:{bsonType:'date'}, horizon_months:{enum:[6,12,24,36]},
     features:{bsonType:'object'}, target:{bsonType:['double','int','long','decimal']}}
 }}});
 training.training_samples.createIndex({dataset_id:1,ticker:1,as_of:1,horizon_months:1},{unique:true});
