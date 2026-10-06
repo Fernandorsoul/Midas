@@ -9,7 +9,7 @@ from urllib.parse import parse_qs, urlparse
 import psycopg
 from pymongo.errors import PyMongoError
 
-from midas_core.application.analysis import build_report, set_favorite
+from midas_core.application.analysis import build_report, build_portfolio_report, set_favorite
 from midas_core.application.datasets import publish_dataset
 from midas_core.application.training import train
 from midas_core.config import PROJECT_ROOT, Settings
@@ -87,6 +87,15 @@ class RequestHandler(SimpleHTTPRequestHandler):
             try:
                 horizon = int(parse_qs(url.query).get("horizon", ["12"])[0])
                 self.respond(200, build_report(horizon))
+            except ValueError as error:
+                self.respond(400, {"error": str(error)})
+            except (psycopg.Error, PyMongoError, KeyError):
+                self.respond(503, {"error": "Não foi possível acessar os bancos de dados."})
+            return
+        if url.path == "/api/portfolio":
+            try:
+                horizon = int(parse_qs(url.query).get("horizon", ["6"])[0])
+                self.respond(200, build_portfolio_report(horizon))
             except ValueError as error:
                 self.respond(400, {"error": str(error)})
             except (psycopg.Error, PyMongoError, KeyError):

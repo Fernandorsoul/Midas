@@ -36,6 +36,7 @@ CMD ["python", "midas.py"]
 FROM python-node-base AS production
 
 COPY midas_core ./midas_core
+COPY config ./config
 COPY --from=frontend /app/web/dist ./web
 COPY midas.py ./
 

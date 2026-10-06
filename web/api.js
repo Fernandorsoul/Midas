@@ -9,6 +9,8 @@ async function request(path, options = {}) {
 
 export const getAnalysis = horizon => request(`/api/analysis?horizon=${horizon}`);
 
+export const getPortfolio = horizon => request(`/api/portfolio?horizon=${horizon}`);
+
 export const saveFavorite = (assetId, saved) => request('/api/favorites', {
   method: 'PUT',
   headers: { 'Content-Type': 'application/json' },

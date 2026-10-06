@@ -93,3 +93,47 @@ def build_report(horizon, mongo_repository=None, postgres_repository=None):
 
 def set_favorite(asset_id, saved, repository=None):
     (repository or PostgresRepository()).set_favorite(asset_id, saved)
+
+def build_portfolio_report(horizon, portfolio_tickers=None, mongo_repository=None, postgres_repository=None):
+    """Constrói relatório focado na carteira do usuário."""
+    from pathlib import Path
+    
+    if portfolio_tickers is None:
+        # Ler carteira do arquivo de configuração
+        portfolio_file = Path(__file__).parent.parent.parent / "config" / "my-portfolio.txt"
+        if portfolio_file.exists():
+            portfolio_tickers = []
+            for line in portfolio_file.read_text(encoding="utf-8").splitlines():
+                content = line.split("#", 1)[0].strip()
+                if content:
+                    portfolio_tickers.append(content.strip())
+        else:
+            portfolio_tickers = []
+    
+    if not portfolio_tickers:
+        return {"error": "Nenhum ativo na carteira. Edite config/my-portfolio.txt"}
+    
+    # Gerar relatório completo
+    full_report = build_report(horizon, mongo_repository, postgres_repository)
+    
+    # Filtrar apenas ativos da carteira
+    portfolio_assets = []
+    for asset in full_report["assets"]:
+        if asset["ticker"] in portfolio_tickers:
+            portfolio_assets.append(asset)
+    
+    # Ordenar por estimativa (melhor primeiro)
+    portfolio_assets.sort(key=lambda x: (
+        -(x["opportunity"]["estimate"] if x["opportunity"] else float("-inf")),
+        x["ticker"],
+    ))
+    
+    return {
+        "portfolio": portfolio_assets,
+        "portfolio_tickers": portfolio_tickers,
+        "horizon": horizon,
+        "metrics": full_report["metrics"],
+        "model_validated": full_report["model_validated"],
+        "model_run_date": full_report["model_run_date"],
+        "method": full_report["method"],
+    }
