@@ -11,6 +11,13 @@ from pymongo.errors import PyMongoError
 
 from midas_core.application.analysis import build_report, build_portfolio_report, set_favorite
 from midas_core.application.datasets import publish_dataset
+from midas_core.application.portfolio_ledger import (
+    delete_operation,
+    edit_operation,
+    list_operations,
+    position_summary,
+    record_operation,
+)
 from midas_core.application.training import train
 from midas_core.config import PROJECT_ROOT, Settings
 from midas_core.infrastructure.repositories import PostgresRepository
@@ -118,6 +125,25 @@ class RequestHandler(SimpleHTTPRequestHandler):
             except psycopg.Error:
                 self.respond(503, {"error": "Não foi possível acessar o PostgreSQL."})
             return
+        if url.path == "/api/portfolio/operations":
+            try:
+                query = parse_qs(url.query)
+                ticker = query.get("ticker", [None])[0]
+                self.respond(200, list_operations(repository=PostgresRepository(), ticker=ticker))
+            except ValueError as error:
+                self.respond(400, {"error": str(error)})
+            except psycopg.Error:
+                self.respond(503, {"error": "Não foi possível acessar o PostgreSQL."})
+            return
+        if url.path == "/api/portfolio/positions":
+            try:
+                ticker = parse_qs(url.query).get("ticker", [None])[0]
+                self.respond(200, position_summary(ticker=ticker, repository=PostgresRepository()))
+            except ValueError as error:
+                self.respond(400, {"error": str(error)})
+            except psycopg.Error:
+                self.respond(503, {"error": "Não foi possível acessar o PostgreSQL."})
+            return
         if url.path.startswith("/api/"):
             self.respond(404, {"error": "Rota não encontrada."})
         else:
@@ -163,6 +189,31 @@ class RequestHandler(SimpleHTTPRequestHandler):
             except psycopg.Error:
                 self.respond(503, {"error": "Não foi possível acessar o PostgreSQL."})
             return
+        if self.path == "/api/portfolio/operations":
+            if not self._require_same_origin():
+                return
+            try:
+                body = self._read_json()
+                self.respond(201, record_operation(body, repository=PostgresRepository()))
+            except ValueError as error:
+                self.respond(400, {"error": str(error)})
+            except psycopg.Error:
+                self.respond(503, {"error": "Não foi possível acessar o PostgreSQL."})
+            return
+        if self.path == "/api/portfolio/operations/delete":
+            if not self._require_same_origin():
+                return
+            try:
+                body = self._read_json()
+                operation_id = body.get("id")
+                if type(operation_id) is not int:
+                    raise ValueError("id da operação inválido.")
+                self.respond(200, delete_operation(operation_id, repository=PostgresRepository()))
+            except ValueError as error:
+                self.respond(400, {"error": str(error)})
+            except psycopg.Error:
+                self.respond(503, {"error": "Não foi possível acessar o PostgreSQL."})
+            return
         if self.path != "/api/training":
             self.respond(404, {"error": "Rota não encontrada."})
             return
@@ -196,12 +247,24 @@ class RequestHandler(SimpleHTTPRequestHandler):
             self.respond(400, {"error": str(error)})
 
     def do_PUT(self):
-        if self.path != "/api/favorites":
-            self.respond(404, {"error": "Rota não encontrada."})
-            return
         origin = self.headers.get("Origin")
         if origin and origin != "http://" + self.headers.get("Host", ""):
             self.respond(403, {"error": "Origem não permitida."})
+            return
+        if self.path == "/api/portfolio/operations":
+            try:
+                body = self._read_json()
+                operation_id = body.get("id")
+                if type(operation_id) is not int:
+                    raise ValueError("id da operação inválido.")
+                self.respond(200, edit_operation(operation_id, body, repository=PostgresRepository()))
+            except ValueError as error:
+                self.respond(400, {"error": str(error)})
+            except psycopg.Error:
+                self.respond(503, {"error": "Não foi possível acessar o PostgreSQL."})
+            return
+        if self.path != "/api/favorites":
+            self.respond(404, {"error": "Rota não encontrada."})
             return
         try:
             body = self._read_json()
@@ -213,6 +276,13 @@ class RequestHandler(SimpleHTTPRequestHandler):
             self.respond(400, {"error": str(error)})
         except (psycopg.Error, KeyError):
             self.respond(503, {"error": "Não foi possível salvar no PostgreSQL."})
+
+    def _require_same_origin(self):
+        origin = self.headers.get("Origin")
+        if origin and origin != "http://" + self.headers.get("Host", ""):
+            self.respond(403, {"error": "Origem não permitida."})
+            return False
+        return True
 
     def _read_json(self):
         size = int(self.headers.get("Content-Length", "0"))

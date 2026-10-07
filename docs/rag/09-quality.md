@@ -10,12 +10,17 @@ Há testes de regras de análise, HTTP, importação e treinamento. Endpoints b�
 
 ## Lacunas prioritárias
 
-- Operações parciais, preço médio, taxas e P&L.
 - Eventos de dividendos/JCP e data-com.
 - Falhas, timeout e lacunas de provedores.
 - Importações duplicadas e concorrência.
 - Fluxos de interface: carregar, erro, vazio e sucesso.
 - Contratos de novas rotas e autorização futura.
+
+## Cobertura do livro de operações
+
+- `test_portfolio.py` cobre compra, venda parcial, taxas, rejeição de venda descoberta, renda/despesa e ordem cronológica.
+- `test_portfolio_ledger.py` cobre `total_pnl`, moeda única, payload, lançamento, edição/exclusão controladas e resumo de posição com repositório fake.
+- `test_http.py` cobre rotas de operações/posições, validação de `id` e origem.
 
 ## Critérios de aceite transversais
 
@@ -36,3 +41,5 @@ Há testes de regras de análise, HTTP, importação e treinamento. Endpoints b�
 - `test_http.py`
 - `test_market_api.py`
 - `test_midas.py`
+- `test_portfolio.py`
+- `test_portfolio_ledger.py`

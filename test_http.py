@@ -195,6 +195,97 @@ class PortfolioEndpointTests(HTTPTestBase):
         mock_report.assert_called_once_with(6, ["PETR4"])
 
 
+class PortfolioOperationsEndpointTests(HTTPTestBase):
+    @patch("midas_core.interfaces.http.list_operations")
+    def test_lists_operations(self, mock_list):
+        mock_list.return_value = {"operations": [{"id": 1, "operation_type": "buy"}]}
+        status, body = self.request("GET", "/api/portfolio/operations")
+        self.assertEqual(status, 200)
+        self.assertEqual(body["operations"][0]["operation_type"], "buy")
+
+    @patch("midas_core.interfaces.http.position_summary")
+    def test_returns_position_summary(self, mock_summary):
+        mock_summary.return_value = {
+            "positions": {"PETR4": {"quantity": 10, "realized_pnl": 0, "unrealized_pnl": 5}},
+            "totals": {"total_pnl": 5},
+        }
+        status, body = self.request("GET", "/api/portfolio/positions?ticker=PETR4")
+        self.assertEqual(status, 200)
+        self.assertIn("PETR4", body["positions"])
+        mock_summary.assert_called_once()
+
+    @patch("midas_core.interfaces.http.record_operation")
+    def test_creates_operation(self, mock_record):
+        mock_record.return_value = {"operation": {"id": 1, "operation_type": "buy"}, "message": "ok"}
+        status, body = self.request("POST", "/api/portfolio/operations", {
+            "ticker": "PETR4",
+            "operation_type": "buy",
+            "occurred_on": "2025-01-15",
+            "quantity": 10,
+            "unit_price": 25.5,
+        })
+        self.assertEqual(status, 201)
+        self.assertEqual(body["operation"]["operation_type"], "buy")
+
+    @patch("midas_core.interfaces.http.record_operation")
+    def test_create_rejects_sell_above_position(self, mock_record):
+        mock_record.side_effect = ValueError("Venda excede a posição disponível.")
+        status, body = self.request("POST", "/api/portfolio/operations", {
+            "ticker": "PETR4",
+            "operation_type": "sell",
+            "occurred_on": "2025-01-15",
+            "quantity": 10,
+            "unit_price": 25.5,
+        })
+        self.assertEqual(status, 400)
+        self.assertIn("excede", body["error"])
+
+    @patch("midas_core.interfaces.http.edit_operation")
+    def test_edits_operation(self, mock_edit):
+        mock_edit.return_value = {"operation": {"id": 1, "operation_type": "buy"}, "message": "ok"}
+        status, body = self.request("PUT", "/api/portfolio/operations", {
+            "id": 1,
+            "ticker": "PETR4",
+            "operation_type": "buy",
+            "occurred_on": "2025-01-15",
+            "quantity": 5,
+            "unit_price": 25.5,
+        })
+        self.assertEqual(status, 200)
+        self.assertEqual(body["operation"]["id"], 1)
+
+    def test_edit_requires_operation_id(self):
+        status, body = self.request("PUT", "/api/portfolio/operations", {
+            "ticker": "PETR4",
+            "operation_type": "buy",
+            "occurred_on": "2025-01-15",
+            "quantity": 5,
+        })
+        self.assertEqual(status, 400)
+        self.assertIn("id", body["error"])
+
+    @patch("midas_core.interfaces.http.delete_operation")
+    def test_deletes_operation(self, mock_delete):
+        mock_delete.return_value = {"message": "excluída", "id": 3}
+        status, body = self.request("POST", "/api/portfolio/operations/delete", {"id": 3})
+        self.assertEqual(status, 200)
+        self.assertEqual(body["id"], 3)
+
+    def test_delete_requires_integer_id(self):
+        status, body = self.request("POST", "/api/portfolio/operations/delete", {"id": "3"})
+        self.assertEqual(status, 400)
+
+    def test_operations_reject_foreign_origin(self):
+        import http.client
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("POST", "/api/portfolio/operations",
+                     body=json.dumps({"operation_type": "buy"}).encode(),
+                     headers={"Content-Type": "application/json", "Origin": "http://evil.com"})
+        response = conn.getresponse()
+        self.assertEqual(response.status, 403)
+        conn.close()
+
+
 class FavoritesEndpointTests(HTTPTestBase):
     @patch("midas_core.interfaces.http.set_favorite")
     def test_saves_favorite(self, mock_fav):

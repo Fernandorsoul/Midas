@@ -6,7 +6,7 @@ Interface React sem JSX, navegação, componentes, estilos e feedback do usuári
 
 ## Páginas atuais
 
-- Minha Carteira
+- Minha Carteira (inclui livro de operações: formulário, histórico e resumo de posição/P&L)
 - Todos os Ativos
 - Treinamento
 - Validação
@@ -46,6 +46,7 @@ Existem textos com codificação incorreta em arquivos web. Novos arquivos e cor
 
 - `web/app.js`
 - `web/AssetExplorer.js`
+- `web/OperationsLedger.js`
 - `web/layout.js`
 - `web/ui.js`
 - `web/api.js`

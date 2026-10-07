@@ -161,6 +161,123 @@ class PostgresRepository:
             ).fetchone()
         return bool(deleted)
 
+    def _ensure_portfolio(self, connection, name):
+        connection.execute("SELECT pg_advisory_xact_lock(741210)")
+        portfolio = connection.execute(
+            """INSERT INTO portfolios(name) VALUES (%s)
+               ON CONFLICT (name) DO UPDATE SET name=EXCLUDED.name RETURNING id""",
+            (name,),
+        ).fetchone()
+        return portfolio["id"]
+
+    def _ensure_asset(self, connection, ticker):
+        asset = connection.execute(
+            "SELECT id FROM assets WHERE ticker=%s AND NOT is_demo", (ticker,)
+        ).fetchone()
+        if asset is None:
+            raise ValueError("Ativo não encontrado. Importe suas cotações antes de lançar operações.")
+        return asset["id"]
+
+    def list_portfolio_operations(self, name="Minha Carteira", ticker=None):
+        with self._connector() as connection:
+            sql = """SELECT po.id,a.ticker,po.operation_type,po.occurred_on,po.quantity,
+                            po.unit_price,po.amount,po.fees,po.taxes,po.currency,po.notes,
+                            po.created_at,po.updated_at
+                     FROM portfolio_operations po
+                     JOIN portfolios p ON p.id=po.portfolio_id
+                     LEFT JOIN assets a ON a.id=po.asset_id
+                     WHERE p.name=%s"""
+            params = [name]
+            if ticker:
+                sql += " AND a.ticker=%s"
+                params.append(ticker)
+            sql += " ORDER BY po.occurred_on, po.id"
+            return connection.execute(sql, params).fetchall()
+
+    def get_portfolio_operation(self, operation_id, name="Minha Carteira"):
+        with self._connector() as connection:
+            return connection.execute(
+                """SELECT po.id,a.ticker,po.operation_type,po.occurred_on,po.quantity,
+                          po.unit_price,po.amount,po.fees,po.taxes,po.currency,po.notes,
+                          po.created_at,po.updated_at
+                   FROM portfolio_operations po
+                   JOIN portfolios p ON p.id=po.portfolio_id
+                   LEFT JOIN assets a ON a.id=po.asset_id
+                   WHERE po.id=%s AND p.name=%s""",
+                (operation_id, name),
+            ).fetchone()
+
+    def insert_portfolio_operation(
+        self, portfolio_name, ticker, operation_type, occurred_on,
+        quantity, unit_price, amount, fees, taxes, currency, notes=None,
+    ):
+        with self._connector() as connection:
+            portfolio_id = self._ensure_portfolio(connection, portfolio_name)
+            asset_id = self._ensure_asset(connection, ticker) if ticker else None
+            return connection.execute(
+                """INSERT INTO portfolio_operations(
+                       portfolio_id,asset_id,operation_type,occurred_on,quantity,
+                       unit_price,amount,fees,taxes,currency,notes)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                   RETURNING id,operation_type,occurred_on,quantity,unit_price,amount,
+                             fees,taxes,currency,notes,created_at,updated_at""",
+                (
+                    portfolio_id, asset_id, operation_type, occurred_on, quantity,
+                    unit_price, amount, fees, taxes, currency, notes,
+                ),
+            ).fetchone() | {"ticker": ticker}
+
+    def update_portfolio_operation(
+        self, operation_id, ticker, operation_type, occurred_on,
+        quantity, unit_price, amount, fees, taxes, currency, notes=None,
+    ):
+        with self._connector() as connection:
+            asset_id = self._ensure_asset(connection, ticker) if ticker else None
+            row = connection.execute(
+                """UPDATE portfolio_operations SET
+                       asset_id=%s,operation_type=%s,occurred_on=%s,quantity=%s,
+                       unit_price=%s,amount=%s,fees=%s,taxes=%s,currency=%s,
+                       notes=%s,updated_at=now()
+                   WHERE id=%s
+                   RETURNING id,operation_type,occurred_on,quantity,unit_price,amount,
+                             fees,taxes,currency,notes,created_at,updated_at""",
+                (
+                    asset_id, operation_type, occurred_on, quantity, unit_price,
+                    amount, fees, taxes, currency, notes, operation_id,
+                ),
+            ).fetchone()
+            if row is None:
+                raise ValueError("Operação não encontrada.")
+            return row | {"ticker": ticker}
+
+    def delete_portfolio_operation(self, operation_id, name="Minha Carteira"):
+        with self._connector() as connection:
+            deleted = connection.execute(
+                """DELETE FROM portfolio_operations po USING portfolios p
+                   WHERE po.portfolio_id=p.id AND po.id=%s AND p.name=%s
+                   RETURNING po.id""",
+                (operation_id, name),
+            ).fetchone()
+            return bool(deleted)
+
+    def latest_price(self, ticker, source=None):
+        with self._connector() as connection:
+            if source:
+                return connection.execute(
+                    """SELECT p.close,p.price_date,p.source
+                       FROM daily_prices p JOIN assets a ON a.id=p.asset_id
+                       WHERE a.ticker=%s AND p.source=%s
+                       ORDER BY p.price_date DESC LIMIT 1""",
+                    (ticker, source),
+                ).fetchone()
+            return connection.execute(
+                """SELECT p.close,p.price_date,p.source
+                   FROM daily_prices p JOIN assets a ON a.id=p.asset_id
+                   WHERE a.ticker=%s
+                   ORDER BY p.price_date DESC,p.ingested_at DESC LIMIT 1""",
+                (ticker,),
+            ).fetchone()
+
 class MongoRepository:
     def __init__(self, connector=connect_mongo):
         self._connector = connector

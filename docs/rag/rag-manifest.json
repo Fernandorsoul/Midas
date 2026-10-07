@@ -22,8 +22,8 @@
     {
       "id": "portfolio",
       "path": "03-portfolio.md",
-      "keywords": ["carteira", "posição", "compra", "venda", "preço médio", "dividendo", "JCP", "P&L", "provento"],
-      "code_roots": ["midas_core/interfaces/http.py", "midas_core/application/analysis.py", "web/app.js"]
+      "keywords": ["carteira", "posição", "compra", "venda", "preço médio", "dividendo", "JCP", "P&L", "provento", "operação", "livro", "custo", "realizado"],
+      "code_roots": ["midas_core/domain/portfolio.py", "midas_core/application/portfolio_ledger.py", "midas_core/interfaces/http.py", "midas_core/application/analysis.py", "web/OperationsLedger.js", "web/app.js"]
     },
     {
       "id": "quant-research",
@@ -59,7 +59,7 @@
       "id": "quality",
       "path": "09-quality.md",
       "keywords": ["teste", "bug", "qualidade", "aceite", "regressão", "monitoramento"],
-      "code_roots": ["test_analysis.py", "test_http.py", "test_market_api.py", "test_midas.py"]
+      "code_roots": ["test_analysis.py", "test_http.py", "test_market_api.py", "test_midas.py", "test_portfolio.py", "test_portfolio_ledger.py"]
     },
     {
       "id": "codebase-catalog",

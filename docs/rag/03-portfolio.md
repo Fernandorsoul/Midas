@@ -6,40 +6,51 @@ Gerenciar ativos acompanhados, quantidades, posições, operações e proventos 
 
 ## Estado atual
 
-- A carteira padrão é persistida no PostgreSQL com o nome `Minha Carteira`.
-- A quantidade é editável, mas não existe histórico de compra/venda, preço médio ou custo.
-- Dividendos são consultados no Yahoo Finance durante a requisição e a simulação de reinvestimento considera apenas cotas inteiras.
-- A lista é perdida quando a aplicação reinicia.
+- A carteira padrão `Minha Carteira` é persistida em PostgreSQL (`portfolios` e `portfolio_assets`).
+- Existe livro razão auditável em `portfolio_operations` com compra, venda, aporte, retirada, dividendo, JCP, taxa e imposto.
+- Posição, custo médio, P&L realizado/não realizado e retorno total são calculados das operações pelo domínio.
+- A lista simples de tickers/quantidades (`portfolio_assets`) continua sendo a fonte do filtro de treino e dos dividendos simulados.
 
 ## Persistência
 
-O schema contém `portfolios` e `portfolio_assets`, com uma carteira nomeada e quantidades positivas por ativo. `PostgresRepository` oferece leitura, upsert e remoção dessas posições. A migração idempotente é `infra/postgres/migrations/001-persistent-portfolio.sql`; as rotas de carteira, dividendos, relatório e o filtro de treino usam esse repositório como fonte de verdade.
+- `portfolios` e `portfolio_assets` mantêm a lista de ativos e quantidade.
+- `portfolio_operations` é a fonte de verdade do livro financeiro. Migrações idempotentes: `001-persistent-portfolio.sql` e `002-portfolio-operations.sql`.
+- `PostgresRepository` oferece CRUD de operações (`list_portfolio_operations`, `insert_portfolio_operation`, `update_portfolio_operation`, `delete_portfolio_operation`) e `latest_price` para P&L a mercado.
+
+## Regras de domínio confirmadas
+
+- Cálculo por custo médio móvel em ordem cronológica (`midas_core/domain/portfolio.py`).
+- Compra soma `quantity * unit_price + fees + taxes` ao custo.
+- Venda parcial realiza P&L com preço médio da data; venda acima da posição é rejeitada (sem venda descoberta).
+- Dividendos/JCP são renda líquida de impostos; taxas/impostos avulsos são despesa e não alteram o custo dos ativos mantidos.
+- Aportes e retiradas afetam o fluxo de caixa, não a quantidade.
+- Operações da mesma posição devem usar a mesma moeda (padrão `BRL`).
+- `total_pnl = realizado + não realizado + renda - despesas avulsas`.
+- Edição e exclusão são controladas: o livro restante é revalidado antes de persistir.
 
 ## Fluxo confirmado
 
-- Adição recebe ticker e quantidade, importa cinco anos de preços Yahoo e só então cria/atualiza a posição persistida.
-- Se a importação falhar, a posição não é criada ou alterada e a rota devolve erro; uma falha não pode ser apresentada como sucesso.
-- O relatório de carteira filtra o ranking completo pelos tickers; tickers ainda sem dados aparecem como ativo sintético com status de ausência de dados.
-- O treino iniciado pela carteira usa somente os tickers persistidos; não usa quantidade, custo ou data de entrada.
-- Dividendos multiplicam o valor anual de 12 meses pela quantidade atual e estimam reinvestimento por `floor(total_dividendos / preço_atual)`.
+- Lançamento de operação valida payload, regras de tipo/ticker/valor e o livro resultante antes do insert.
+- Edição exige tipo e data; se o ticker mudar, revalida o livro do ativo anterior e do novo.
+- Consulta de posição devolve quantidade, custo, preço médio, mercado (com data/fonte), realizado, não realizado, renda, despesas, fluxo de caixa e retorno total por ativo e no agregado.
+- Histórico é ordenado por data e id.
 
 ## Não confundir
 
-- “Ativo na carteira” atual não é uma posição financeira auditável.
-- Reinvestimento exibido é simulação, não uma nova operação real.
+- “Ativo na carteira” (`portfolio_assets`) não substitui o livro de operações.
+- Reinvestimento exibido em dividendos é simulação, não operação real.
 - Favoritos são uma watchlist separada da carteira.
-
-## Direção de evolução
-
-Fonte de verdade deve ser uma tabela de operações: compra, venda, dividendos/JCP, aportes, retiradas, taxas e eventos corporativos. Posições, preço médio e P&L devem ser calculados dessas operações.
+- Ranking/estimativa do modelo não é recomendação de compra/venda.
 
 ## Pontos de código
 
-- `midas_core/interfaces/http.py` (`PORTFOLIO_TICKERS` e rotas de carteira)
-- `midas_core/application/analysis.py` (`build_portfolio_report`)
+- `midas_core/domain/portfolio.py` (`Operation`, `calculate_position`, `PositionSummary.total_pnl`)
+- `midas_core/application/portfolio_ledger.py` (payload, CRUD validado, `position_summary`)
+- `midas_core/infrastructure/repositories.py` (operações e `latest_price`)
+- `midas_core/interfaces/http.py` (rotas de operações/posições)
+- `web/OperationsLedger.js` (formulário, histórico e resumo)
 - `web/app.js` (`PortfolioPage` e `PortfolioManager`)
-- `web/api.js`
 
-## Dados mínimos da posição futura
+## Dados mínimos da posição
 
-Quantidade, custo total, preço médio, cotação/data, valor de mercado, resultado realizado/não realizado, proventos brutos/líquidos e peso na carteira.
+Quantidade, custo total, preço médio, cotação/data/fonte, valor de mercado, resultado realizado/não realizado, proventos, despesas, fluxo de caixa, retorno total e moeda.
