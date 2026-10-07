@@ -2,6 +2,7 @@ import { getAnalysis, getPortfolio, getPortfolioList, addToPortfolio, removeFrom
 import { AssetExplorer } from './AssetExplorer.js';
 import { EvaluationPanel } from './EvaluationPanel.js';
 import { Layout } from './layout.js';
+import { OperationsLedger } from './OperationsLedger.js';
 import { createRoot, React, useEffect, useMemo, useState } from './react.js';
 import { TrainingConsole } from './TrainingConsole.js';
 import { ValidationHistory } from './ValidationHistory.js';
@@ -101,6 +102,7 @@ function PortfolioPage({ portfolio, loading, horizon, portfolioList, portfolioDa
       ),
     ),
     h(PortfolioManager, { portfolioList, portfolioData, onAdd, onRemove, loading }),
+    h(OperationsLedger),
     // Dividend Summary
     totalDividends > 0 ? h('div', { className: 'dividend-summary' },
       h('div', { className: 'dividend-card' },

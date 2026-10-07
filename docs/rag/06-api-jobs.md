@@ -14,6 +14,11 @@ Contratos HTTP locais, validação de entrada, status de tarefas e tratamento de
 | `POST /api/portfolio/add` | Adiciona/atualiza ticker e importa dados |
 | `POST /api/portfolio/remove` | Remove ticker da lista |
 | `GET /api/portfolio/dividends` | Consulta dividendos atuais |
+| `GET /api/portfolio/operations` | Histórico do livro de operações |
+| `POST /api/portfolio/operations` | Lança operação (201) |
+| `PUT /api/portfolio/operations` | Edição controlada de operação |
+| `POST /api/portfolio/operations/delete` | Exclui operação revalidando o livro |
+| `GET /api/portfolio/positions` | Posição, custo, P&L e retorno total |
 | `PUT /api/favorites` | Altera favorito |
 | `POST /api/training` | Enfileira treinamento em thread |
 | `GET /api/training/status` | Estado em memória do treinamento |
@@ -32,6 +37,10 @@ Status de treinamento e tarefas não sobrevivem a reinício. O processamento em 
 - `POST /api/portfolio/add` importa o ticker no Yahoo de forma síncrona e persiste a posição somente após o sucesso da importação.
 - `GET /api/portfolio/list`, `POST /api/portfolio/remove` e `GET /api/portfolio/dividends` leem as posições persistidas; indisponibilidade do PostgreSQL retorna 503 nas rotas HTTP.
 - Dividendos são consultados sequencialmente no Yahoo a cada `GET /api/portfolio/dividends`; falhas do provedor são retornadas por ticker em vez de falhar a resposta completa.
+- Operações validam tipo, data, moeda, ticker e valores; venda acima da posição retorna 400 e não persiste.
+- Edição (`PUT`) exige `id`, tipo e data e revalida o livro do ativo (inclusive se o ticker mudar).
+- Exclusão revalida o livro restante; se restar venda inválida, retorna 400.
+- `GET /api/portfolio/positions` aceita `?ticker=` opcional e devolve posições, totais, data/fonte de mercado quando existirem.
 
 ## Pontos de entrada auxiliares
 

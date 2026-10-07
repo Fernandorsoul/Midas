@@ -24,6 +24,7 @@ Este catálogo registra todos os arquivos relevantes de código, configuração,
 | `midas_core/domain/entities.py` | Dataclasses imutáveis `PricePoint` e `ImportedStock`. |
 | `midas_core/domain/features.py` | Série mensal, fatores de preço/fundamentos e criação de amostras para horizontes 6/12/24/36. Inclui indicadores auxiliares não usados no vetor atual (ADX, estocástico, Williams, OBV e MFI). |
 | `midas_core/domain/regression.py` | Ridge NumPy, normalização, predição, MAE, acerto direcional, ranking Spearman e particionamento temporal. |
+| `midas_core/domain/portfolio.py` | Livro razão puro: `Operation`, `calculate_position` (custo médio), `PositionSummary` e `total_pnl`. |
 | `midas_core/domain/__init__.py` | Marcador de pacote. |
 
 ## Treinamento e casos de uso
@@ -35,6 +36,7 @@ Este catálogo registra todos os arquivos relevantes de código, configuração,
 | `midas_core/application/datasets.py` | Lê preços por fonte, busca fundamentos históricos, cria e publica snapshots MongoDB. |
 | `midas_core/application/training.py` | Carrega amostras, treina, salva artefato MongoDB e run PostgreSQL com compensação simples. |
 | `midas_core/application/analysis.py` | Gera ranking, busca o artefato mais recente utilizável, calcula oportunidade e relatório de carteira. |
+| `midas_core/application/portfolio_ledger.py` | Caso de uso do livro de operações: payload, CRUD com revalidação e resumo de posição/P&L. |
 | `midas_core/application/market_import.py` | Importador brapi com validação, parsing e persistência. |
 | `midas_core/application/market_import_yahoo.py` | Importador Yahoo tolerante a falhas parciais. |
 | `midas_core/application/__init__.py` | Marcador de pacote. |
@@ -72,6 +74,7 @@ Este catálogo registra todos os arquivos relevantes de código, configuração,
 | `web/index.html` | Shell HTML e entrada do app. |
 | `web/react.js` | Adaptador de imports React. |
 | `web/app.js` | Estado principal, carregamento paralelo, páginas e ações de carteira/treino. |
+| `web/OperationsLedger.js` | Formulário de operações, histórico e resumo de posição na carteira. |
 | `web/api.js` | Cliente fetch e contratos das rotas HTTP. |
 | `web/layout.js` | Sidebar e navegação local. |
 | `web/AssetExplorer.js` | Filtros, tabela de ativos e favoritos. |
@@ -92,6 +95,9 @@ Este catálogo registra todos os arquivos relevantes de código, configuração,
 | Arquivo | Papel |
 |---|---|
 | `infra/postgres/01-init.sh` | Roles, tabelas e privilégios do PostgreSQL operacional. |
+| `infra/postgres/migrations/001-persistent-portfolio.sql` | Tabelas `portfolios` e `portfolio_assets`. |
+| `infra/postgres/migrations/002-portfolio-operations.sql` | Tabela `portfolio_operations` e invariantes do livro razão. |
+| `scripts/migrate_postgres.py` | Aplica migrations em ordem via Docker. |
 | `infra/mongo/01-init.js` | Usuário, coleções, validadores e índices MongoDB. |
 | `infra/rag-postgres/01-init.sql` | Extensão pgvector e tabela/índices `rag_chunks`. |
 | `config/stock-universe.txt` | Universo manual de 34 tickers B3 para importação. |
@@ -106,6 +112,8 @@ Este catálogo registra todos os arquivos relevantes de código, configuração,
 | `test_http.py` | Rotas, payloads, erros, origem e estado de treino. |
 | `test_market_api.py` | Normalização, importação brapi e contrato HTTP. |
 | `test_midas.py` | Expurgo temporal, fatores sem futuro, correlação e treinador. |
+| `test_portfolio.py` | Cálculo de posição, P&L e rejeição de venda descoberta. |
+| `test_portfolio_ledger.py` | Caso de uso do livro, edição/exclusão controladas e resumo. |
 | `README.md` | Instalação, importação, treino, avisos de risco e comandos. |
 | `docs/architecture.md` | Camadas, fluxos e regras arquiteturais. |
 | `docs/data-model.md` | Modelo lógico, invariantes e ligação entre bancos. |
@@ -115,6 +123,6 @@ Este catálogo registra todos os arquivos relevantes de código, configuração,
 ## Achados transversais da auditoria
 
 - Documentação histórica menciona apenas horizontes 12/24/36 em alguns trechos, mas código/schema aceitam 6 meses; usar o código como referência operacional atual.
-- A arquitetura declarada é em camadas, porém carteira e jobs ainda vivem na interface HTTP em memória.
+- A arquitetura declarada é em camadas; a carteira e o livro de operações usam repositório/caso de uso, mas jobs ainda vivem na interface HTTP em memória.
 - Há recursos experimentais/sem integração plena: macroeconomia, Alpha Vantage, indicadores auxiliares e modelos de árvore/rede.
 - O RAG indexa resumos modulares e o catálogo, não arquivos-fonte brutos; esse é o mecanismo deliberado para reduzir contexto e tokens.

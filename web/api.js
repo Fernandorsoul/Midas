@@ -27,6 +27,32 @@ export const removeFromPortfolio = ticker => request('/api/portfolio/remove', {
 
 export const getPortfolioDividends = () => request('/api/portfolio/dividends');
 
+export const getPortfolioOperations = ticker => request(
+  `/api/portfolio/operations${ticker ? `?ticker=${encodeURIComponent(ticker)}` : ''}`
+);
+
+export const getPortfolioPositions = ticker => request(
+  `/api/portfolio/positions${ticker ? `?ticker=${encodeURIComponent(ticker)}` : ''}`
+);
+
+export const createPortfolioOperation = payload => request('/api/portfolio/operations', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(payload),
+});
+
+export const updatePortfolioOperation = payload => request('/api/portfolio/operations', {
+  method: 'PUT',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(payload),
+});
+
+export const deletePortfolioOperation = id => request('/api/portfolio/operations/delete', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ id }),
+});
+
 export const saveFavorite = (assetId, saved) => request('/api/favorites', {
   method: 'PUT',
   headers: { 'Content-Type': 'application/json' },
