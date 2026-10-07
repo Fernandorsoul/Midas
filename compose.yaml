@@ -110,7 +110,26 @@ services:
       timeout: 10s
       retries: 20
       start_period: 30s
+  rag-postgres:
+    image: pgvector/pgvector:pg18
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: midas_rag
+      POSTGRES_USER: midas_rag
+      POSTGRES_PASSWORD: ${RAG_POSTGRES_PASSWORD:?Execute python3 scripts/setup_env.py}
+    ports:
+      - "127.0.0.1:${RAG_POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - rag_postgres_data:/var/lib/postgresql
+      - ./infra/rag-postgres:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U midas_rag -d midas_rag"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
 volumes:
   postgres_data:
   mongo_data:
   mongo_config:
+  rag_postgres_data:
