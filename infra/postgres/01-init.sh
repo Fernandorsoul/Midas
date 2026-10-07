@@ -41,6 +41,18 @@ CREATE TABLE model_runs (
     parameters jsonb NOT NULL DEFAULT '{}',
     created_at timestamptz NOT NULL DEFAULT now()
 );
+CREATE TABLE portfolios (
+    id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    name text NOT NULL UNIQUE,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE portfolio_assets (
+    portfolio_id bigint NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE,
+    asset_id bigint NOT NULL REFERENCES assets(id),
+    quantity numeric(20,8) NOT NULL CHECK (quantity > 0),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (portfolio_id, asset_id)
+);
 COMMENT ON COLUMN model_runs.dataset_id IS 'ID lógico do snapshot em midas_training.datasets; referência entre bancos validada pela aplicação.';
 GRANT CONNECT ON DATABASE midas TO midas_app;
 GRANT USAGE ON SCHEMA public TO midas_app;

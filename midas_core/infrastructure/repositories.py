@@ -119,6 +119,48 @@ class PostgresRepository:
                     (asset_id,),
                 )
 
+    def portfolio_assets(self, name="Minha Carteira"):
+        with self._connector() as connection:
+            return connection.execute(
+                """SELECT a.ticker,pa.quantity FROM portfolio_assets pa
+                   JOIN portfolios p ON p.id=pa.portfolio_id
+                   JOIN assets a ON a.id=pa.asset_id
+                   WHERE p.name=%s ORDER BY a.ticker""", (name,)
+            ).fetchall()
+
+    def portfolio_tickers(self, name="Minha Carteira"):
+        return [row["ticker"] for row in self.portfolio_assets(name)]
+
+    def set_portfolio_asset(self, ticker, quantity, name="Minha Carteira"):
+        with self._connector() as connection:
+            connection.execute("SELECT pg_advisory_xact_lock(741210)")
+            portfolio = connection.execute(
+                """INSERT INTO portfolios(name) VALUES (%s)
+                   ON CONFLICT (name) DO UPDATE SET name=EXCLUDED.name RETURNING id""", (name,)
+            ).fetchone()
+            asset = connection.execute(
+                "SELECT id FROM assets WHERE ticker=%s AND NOT is_demo", (ticker,)
+            ).fetchone()
+            if asset is None:
+                raise ValueError("Ativo não encontrado. Importe suas cotações antes de adicionar à carteira.")
+            connection.execute(
+                """INSERT INTO portfolio_assets(portfolio_id,asset_id,quantity)
+                   VALUES (%s,%s,%s) ON CONFLICT (portfolio_id,asset_id) DO UPDATE SET
+                   quantity=EXCLUDED.quantity,updated_at=now()""",
+                (portfolio["id"], asset["id"], quantity),
+            )
+        return self.portfolio_assets(name)
+
+    def remove_portfolio_asset(self, ticker, name="Minha Carteira"):
+        with self._connector() as connection:
+            deleted = connection.execute(
+                """DELETE FROM portfolio_assets pa USING portfolios p,assets a
+                   WHERE pa.portfolio_id=p.id AND pa.asset_id=a.id
+                   AND p.name=%s AND a.ticker=%s RETURNING pa.asset_id""",
+                (name, ticker),
+            ).fetchone()
+        return bool(deleted)
+
 class MongoRepository:
     def __init__(self, connector=connect_mongo):
         self._connector = connector
