@@ -13,6 +13,7 @@ from midas_core.application.analysis import build_report, build_portfolio_report
 from midas_core.application.datasets import publish_dataset
 from midas_core.application.training import train
 from midas_core.config import PROJECT_ROOT, Settings
+from midas_core.infrastructure.repositories import PostgresRepository
 
 WEB_ROOT = PROJECT_ROOT / "web"
 PORTFOLIO_FILE = PROJECT_ROOT / "config" / "my-portfolio.txt"
@@ -98,7 +99,8 @@ class RequestHandler(SimpleHTTPRequestHandler):
         if url.path == "/api/portfolio":
             try:
                 horizon = int(parse_qs(url.query).get("horizon", ["6"])[0])
-                self.respond(200, build_portfolio_report(horizon))
+                tickers = PostgresRepository().portfolio_tickers()
+                self.respond(200, build_portfolio_report(horizon, tickers))
             except ValueError as error:
                 self.respond(400, {"error": str(error)})
             except (psycopg.Error, PyMongoError, KeyError):
@@ -173,7 +175,7 @@ class RequestHandler(SimpleHTTPRequestHandler):
                     "horizon": horizon,
                 })
             # Treinar com ativos da carteira se especificado, senão com todos
-            tickers = list(PORTFOLIO_TICKERS.keys()) if PORTFOLIO_TICKERS else None
+            tickers = PostgresRepository().portfolio_tickers() or None
             source = None  # Usar todas as fontes disponíveis
             thread = threading.Thread(target=_run_training_job, args=(horizon, tickers, source), daemon=True)
             thread.start()
@@ -216,11 +218,25 @@ def run_server():
     server.serve_forever()
 
 def _get_portfolio_list():
+    rows = PostgresRepository().portfolio_assets()
+    portfolio = {row["ticker"]: float(row["quantity"]) for row in rows}
+    return {"tickers": sorted(portfolio), "portfolio": portfolio}
     """Retorna a lista de ativos na carteira com quantidades."""
     with PORTFOLIO_LOCK:
         return {"tickers": sorted(PORTFOLIO_TICKERS.keys()), "portfolio": PORTFOLIO_TICKERS.copy()}
 
 def _add_to_portfolio(ticker, quantity=100):
+    from midas_core.infrastructure.yahoo import SOURCE, fetch_history
+    repository = PostgresRepository()
+    stock = fetch_history(ticker, "5y")
+    price_count = repository.save_stocks([stock], SOURCE)
+    rows = repository.set_portfolio_asset(ticker, quantity)
+    portfolio = {row["ticker"]: float(row["quantity"]) for row in rows}
+    return {
+        "message": f"{ticker} adicionado à carteira com {quantity} cotas.",
+        "tickers": sorted(portfolio), "portfolio": portfolio,
+        "import": {"ticker": ticker, "prices": price_count, "status": "imported"},
+    }
     """Adiciona um ativo à carteira com quantidade e importa seus dados."""
     with PORTFOLIO_LOCK:
         if ticker in PORTFOLIO_TICKERS:
@@ -251,6 +267,11 @@ def _add_to_portfolio(ticker, quantity=100):
         }
 
 def _remove_from_portfolio(ticker):
+    repository = PostgresRepository()
+    removed = repository.remove_portfolio_asset(ticker)
+    result = _get_portfolio_list()
+    result["message"] = f"{ticker} removido da carteira." if removed else f"{ticker} não está na carteira."
+    return result
     """Remove um ativo da carteira."""
     with PORTFOLIO_LOCK:
         if ticker not in PORTFOLIO_TICKERS:
@@ -259,6 +280,8 @@ def _remove_from_portfolio(ticker):
         return {"message": f"{ticker} removido da carteira.", "tickers": sorted(PORTFOLIO_TICKERS.keys())}
 
 def _get_portfolio_dividends():
+    global PORTFOLIO_TICKERS
+    PORTFOLIO_TICKERS = _get_portfolio_list()["portfolio"]
     """Retorna dados de dividendos dos ativos da carteira."""
     from midas_core.infrastructure.yahoo import fetch_dividends, YahooFinanceError
     
