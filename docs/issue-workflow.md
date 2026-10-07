@@ -12,6 +12,8 @@ Este documento define como implementar as issues do Midas sem misturar escopo, p
 6. [#6 — Dashboard e benchmarks](https://github.com/Fernandorsoul/Midas/issues/6)
 7. [#7 — Artefatos quantitativos](https://github.com/Fernandorsoul/Midas/issues/7)
 8. [#8 — Usuários e isolamento](https://github.com/Fernandorsoul/Midas/issues/8)
+9. [#9 — Recuperação RAG híbrida](https://github.com/Fernandorsoul/Midas/issues/9)
+10. [#10 — Migrações e CI](https://github.com/Fernandorsoul/Midas/issues/10)
 
 As issues 4 e 5 podem avançar em paralelo após a issue 1. As issues 2, 3 e 6 têm dependências funcionais e devem respeitar a ordem apresentada.
 
@@ -27,6 +29,8 @@ As issues 4 e 5 podem avançar em paralelo após a issue 1. As issues 2, 3 e 6 t
 | #6 | agregações de carteira, gráficos e benchmarks | recomendação de investimento |
 | #7 | treino, serialização e explicabilidade | sinais sem validação temporal |
 | #8 | identidade, autorização e ownership | SSO ou permissões corporativas complexas |
+| #9 | embeddings, recuperação e limites de contexto RAG | indexar código bruto ou segredos |
+| #10 | executor de migrações, checks e CI | deploy ou release de produção |
 
 ## Passo a passo obrigatório por issue
 
