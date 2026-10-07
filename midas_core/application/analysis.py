@@ -93,10 +93,7 @@ def set_favorite(asset_id, saved, repository=None):
 def build_portfolio_report(horizon, portfolio_tickers=None, mongo_repository=None, postgres_repository=None):
     """Constrói relatório focado na carteira do usuário."""
     if portfolio_tickers is None:
-        # Buscar do armazenamento em memória via módulo
-        from midas_core.interfaces.http import PORTFOLIO_LOCK, PORTFOLIO_TICKERS
-        with PORTFOLIO_LOCK:
-            portfolio_tickers = sorted(PORTFOLIO_TICKERS)
+        portfolio_tickers = (postgres_repository or PostgresRepository()).portfolio_tickers()
     
     if not portfolio_tickers:
         return {"portfolio": [], "portfolio_tickers": [], "horizon": horizon, "metrics": None, "model_validated": False, "model_run_date": None, "method": None}

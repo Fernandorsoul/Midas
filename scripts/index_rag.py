@@ -60,28 +60,43 @@ def index_documents(check_only: bool = False):
     documents = sorted(RAG_ROOT.glob("*.md"))
     if not documents:
         raise ValueError("Nenhum documento encontrado em docs/rag.")
-    chunks = []
+    documents_chunks = {}
     for document in documents:
         relative = document.relative_to(PROJECT_ROOT).as_posix()
+        document_chunks = []
         for index, (title, content) in enumerate(split_sections(document)):
-            chunks.append((
+            document_chunks.append((
                 module_for(document), relative, index, title, content,
                 hashlib.sha256(content.encode("utf-8")).hexdigest(),
                 len(content.split()), Jsonb({"kind": "rag-document"}),
             ))
+        documents_chunks[relative] = document_chunks
     if check_only:
-        return len(chunks)
+        return sum(len(chunks) for chunks in documents_chunks.values())
+
+    indexed = 0
     with connect() as connection:
         with connection.cursor() as cursor:
-            cursor.execute("DELETE FROM rag_chunks WHERE source_path LIKE 'docs/rag/%'")
-            cursor.executemany(
-                """INSERT INTO rag_chunks(
-                    module,source_path,chunk_index,title,content,content_hash,
-                    token_count,metadata
-                ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
-                chunks,
-            )
-    return len(chunks)
+            for source_path, chunks in documents_chunks.items():
+                cursor.execute(
+                    "SELECT content_hash FROM rag_chunks WHERE source_path=%s ORDER BY chunk_index",
+                    (source_path,),
+                )
+                current_hashes = [row[0] for row in cursor.fetchall()]
+                expected_hashes = [chunk[5] for chunk in chunks]
+                if current_hashes == expected_hashes:
+                    continue
+                cursor.execute("DELETE FROM rag_chunks WHERE source_path=%s", (source_path,))
+                if chunks:
+                    cursor.executemany(
+                        """INSERT INTO rag_chunks(
+                            module,source_path,chunk_index,title,content,content_hash,
+                            token_count,metadata
+                        ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+                        chunks,
+                    )
+                indexed += len(chunks)
+    return indexed
 
 
 def main():
@@ -89,7 +104,7 @@ def main():
     parser.add_argument("--check", action="store_true", help="Valida os chunks sem conectar ao banco.")
     arguments = parser.parse_args()
     count = index_documents(check_only=arguments.check)
-    action = "Chunks validados" if arguments.check else "Chunks indexados"
+    action = "Chunks validados" if arguments.check else "Chunks indexados ou atualizados"
     print(f"{action}: {count}")
 
 

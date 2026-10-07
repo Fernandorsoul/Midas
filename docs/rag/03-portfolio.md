@@ -6,21 +6,21 @@ Gerenciar ativos acompanhados, quantidades, posições, operações e proventos 
 
 ## Estado atual
 
-- A carteira é mantida em memória em `PORTFOLIO_TICKERS` no servidor HTTP.
+- A carteira padrão é persistida no PostgreSQL com o nome `Minha Carteira`.
 - A quantidade é editável, mas não existe histórico de compra/venda, preço médio ou custo.
 - Dividendos são consultados no Yahoo Finance durante a requisição e a simulação de reinvestimento considera apenas cotas inteiras.
 - A lista é perdida quando a aplicação reinicia.
 
-## Persistência em implementação
+## Persistência
 
-O schema agora contém `portfolios` e `portfolio_assets`, com uma carteira nomeada e quantidades positivas por ativo. `PostgresRepository` já oferece leitura, upsert e remoção dessas posições. A migração idempotente é `infra/postgres/migrations/001-persistent-portfolio.sql`; a interface HTTP ainda precisa ser conectada a esse repositório antes de a persistência substituir completamente o estado em memória.
+O schema contém `portfolios` e `portfolio_assets`, com uma carteira nomeada e quantidades positivas por ativo. `PostgresRepository` oferece leitura, upsert e remoção dessas posições. A migração idempotente é `infra/postgres/migrations/001-persistent-portfolio.sql`; as rotas de carteira, dividendos, relatório e o filtro de treino usam esse repositório como fonte de verdade.
 
 ## Fluxo confirmado
 
-- Adição recebe ticker e quantidade, inclui/atualiza o dicionário em memória e então tenta importar cinco anos de preços Yahoo.
-- Se a importação falhar, o ticker continua na carteira em memória e a resposta inclui o erro da importação.
+- Adição recebe ticker e quantidade, importa cinco anos de preços Yahoo e só então cria/atualiza a posição persistida.
+- Se a importação falhar, a posição não é criada ou alterada e a rota devolve erro; uma falha não pode ser apresentada como sucesso.
 - O relatório de carteira filtra o ranking completo pelos tickers; tickers ainda sem dados aparecem como ativo sintético com status de ausência de dados.
-- O treino iniciado pela carteira usa somente os tickers atualmente nela; não usa quantidade, custo ou data de entrada.
+- O treino iniciado pela carteira usa somente os tickers persistidos; não usa quantidade, custo ou data de entrada.
 - Dividendos multiplicam o valor anual de 12 meses pela quantidade atual e estimam reinvestimento por `floor(total_dividendos / preço_atual)`.
 
 ## Não confundir

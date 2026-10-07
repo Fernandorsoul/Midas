@@ -10,7 +10,6 @@ Há testes de regras de análise, HTTP, importação e treinamento. Endpoints b�
 
 ## Lacunas prioritárias
 
-- Persistência de carteira após reinício.
 - Operações parciais, preço médio, taxas e P&L.
 - Eventos de dividendos/JCP e data-com.
 - Falhas, timeout e lacunas de provedores.
@@ -26,6 +25,10 @@ Há testes de regras de análise, HTTP, importação e treinamento. Endpoints b�
 - Não criar sinais de investimento sem modelo validado.
 - Não registrar nem expor segredos.
 - Toda alteração de regra de negócio deve ter teste automatizado.
+
+## Contratos cobertos para carteira
+
+`test_http.py` isola PostgreSQL e Yahoo com mocks e cobre listagem, adição/importação, remoção, dividendos e relatório usando posições persistidas. A persistência real entre reinícios também deve ser validada no ambiente integrado antes de publicar uma versão.
 
 ## Pontos de código
 

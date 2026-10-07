@@ -16,11 +16,11 @@ from midas_core.config import PROJECT_ROOT, Settings
 from midas_core.infrastructure.repositories import PostgresRepository
 
 WEB_ROOT = PROJECT_ROOT / "web"
-PORTFOLIO_FILE = PROJECT_ROOT / "config" / "my-portfolio.txt"
 TRAINING_LOCK = threading.Lock()
 TRAINING_JOB = {"status": "idle", "message": "Nenhum treinamento em execução."}
-PORTFOLIO_LOCK = threading.Lock()
-PORTFOLIO_TICKERS = {}  # {ticker: quantity} - Armazenamento em memória
+
+class MarketDataUnavailable(RuntimeError):
+    """A fonte de mercado não respondeu para uma operação de carteira."""
 
 def _training_snapshot():
     with TRAINING_LOCK:
@@ -107,10 +107,16 @@ class RequestHandler(SimpleHTTPRequestHandler):
                 self.respond(503, {"error": "Não foi possível acessar os bancos de dados."})
             return
         if url.path == "/api/portfolio/list":
-            self.respond(200, _get_portfolio_list())
+            try:
+                self.respond(200, _get_portfolio_list())
+            except psycopg.Error:
+                self.respond(503, {"error": "Não foi possível acessar o PostgreSQL."})
             return
         if url.path == "/api/portfolio/dividends":
-            self.respond(200, _get_portfolio_dividends())
+            try:
+                self.respond(200, _get_portfolio_dividends())
+            except psycopg.Error:
+                self.respond(503, {"error": "Não foi possível acessar o PostgreSQL."})
             return
         if url.path.startswith("/api/"):
             self.respond(404, {"error": "Rota não encontrada."})
@@ -135,6 +141,10 @@ class RequestHandler(SimpleHTTPRequestHandler):
                 self.respond(200, result)
             except ValueError as error:
                 self.respond(400, {"error": str(error)})
+            except MarketDataUnavailable as error:
+                self.respond(502, {"error": str(error)})
+            except psycopg.Error:
+                self.respond(503, {"error": "Não foi possível acessar o PostgreSQL."})
             return
         if self.path == "/api/portfolio/remove":
             origin = self.headers.get("Origin")
@@ -150,6 +160,8 @@ class RequestHandler(SimpleHTTPRequestHandler):
                 self.respond(200, result)
             except ValueError as error:
                 self.respond(400, {"error": str(error)})
+            except psycopg.Error:
+                self.respond(503, {"error": "Não foi possível acessar o PostgreSQL."})
             return
         if self.path != "/api/training":
             self.respond(404, {"error": "Rota não encontrada."})
@@ -218,17 +230,19 @@ def run_server():
     server.serve_forever()
 
 def _get_portfolio_list():
+    """Retorna posições persistidas da carteira padrão."""
     rows = PostgresRepository().portfolio_assets()
     portfolio = {row["ticker"]: float(row["quantity"]) for row in rows}
     return {"tickers": sorted(portfolio), "portfolio": portfolio}
-    """Retorna a lista de ativos na carteira com quantidades."""
-    with PORTFOLIO_LOCK:
-        return {"tickers": sorted(PORTFOLIO_TICKERS.keys()), "portfolio": PORTFOLIO_TICKERS.copy()}
 
 def _add_to_portfolio(ticker, quantity=100):
-    from midas_core.infrastructure.yahoo import SOURCE, fetch_history
+    """Importa as cotações e persiste a posição na carteira padrão."""
+    from midas_core.infrastructure.yahoo import SOURCE, YahooFinanceError, fetch_history
     repository = PostgresRepository()
-    stock = fetch_history(ticker, "5y")
+    try:
+        stock = fetch_history(ticker, "5y")
+    except YahooFinanceError as error:
+        raise MarketDataUnavailable("Não foi possível importar cotações do Yahoo Finance.") from error
     price_count = repository.save_stocks([stock], SOURCE)
     rows = repository.set_portfolio_asset(ticker, quantity)
     portfolio = {row["ticker"]: float(row["quantity"]) for row in rows}
@@ -237,57 +251,21 @@ def _add_to_portfolio(ticker, quantity=100):
         "tickers": sorted(portfolio), "portfolio": portfolio,
         "import": {"ticker": ticker, "prices": price_count, "status": "imported"},
     }
-    """Adiciona um ativo à carteira com quantidade e importa seus dados."""
-    with PORTFOLIO_LOCK:
-        if ticker in PORTFOLIO_TICKERS:
-            PORTFOLIO_TICKERS[ticker] = quantity
-            return {"message": f"{ticker} atualizado para {quantity} cotas.", "tickers": sorted(PORTFOLIO_TICKERS.keys()), "portfolio": PORTFOLIO_TICKERS.copy()}
-        PORTFOLIO_TICKERS[ticker] = quantity
-    
-    # Importar dados do ativo do Yahoo Finance em background
-    def _import_asset(ticker):
-        try:
-            from midas_core.infrastructure.yahoo import fetch_history, SOURCE
-            from midas_core.infrastructure.repositories import PostgresRepository
-            stock = fetch_history(ticker, "5y")
-            repo = PostgresRepository()
-            count = repo.save_stocks([stock], SOURCE)
-            return {"ticker": ticker, "prices": count, "status": "imported"}
-        except Exception as e:
-            return {"ticker": ticker, "error": str(e), "status": "failed"}
-    
-    import_result = _import_asset(ticker)
-    
-    with PORTFOLIO_LOCK:
-        return {
-            "message": f"{ticker} adicionado à carteira com {quantity} cotas.",
-            "tickers": sorted(PORTFOLIO_TICKERS.keys()),
-            "portfolio": PORTFOLIO_TICKERS.copy(),
-            "import": import_result,
-        }
 
 def _remove_from_portfolio(ticker):
+    """Remove uma posição persistida da carteira padrão."""
     repository = PostgresRepository()
     removed = repository.remove_portfolio_asset(ticker)
     result = _get_portfolio_list()
     result["message"] = f"{ticker} removido da carteira." if removed else f"{ticker} não está na carteira."
     return result
-    """Remove um ativo da carteira."""
-    with PORTFOLIO_LOCK:
-        if ticker not in PORTFOLIO_TICKERS:
-            return {"message": f"{ticker} não está na carteira.", "tickers": sorted(PORTFOLIO_TICKERS.keys())}
-        del PORTFOLIO_TICKERS[ticker]
-        return {"message": f"{ticker} removido da carteira.", "tickers": sorted(PORTFOLIO_TICKERS.keys())}
 
 def _get_portfolio_dividends():
-    global PORTFOLIO_TICKERS
-    PORTFOLIO_TICKERS = _get_portfolio_list()["portfolio"]
     """Retorna dados de dividendos dos ativos da carteira."""
     from midas_core.infrastructure.yahoo import fetch_dividends, YahooFinanceError
-    
-    with PORTFOLIO_LOCK:
-        tickers = list(PORTFOLIO_TICKERS.keys())
-        quantities = PORTFOLIO_TICKERS.copy()
+    portfolio = _get_portfolio_list()["portfolio"]
+    tickers = list(portfolio)
+    quantities = portfolio
     
     if not tickers:
         return {"dividends": {}}

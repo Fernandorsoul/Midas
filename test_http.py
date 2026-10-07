@@ -84,8 +84,10 @@ class TrainingEndpointTests(HTTPTestBase):
             TRAINING_JOB.clear()
             TRAINING_JOB.update({"status": "idle", "message": "Nenhum treinamento em execução."})
 
+    @patch("midas_core.interfaces.http.PostgresRepository")
     @patch("midas_core.interfaces.http._run_training_job")
-    def test_starts_training_and_returns_202(self, mock_job):
+    def test_starts_training_and_returns_202(self, mock_job, mock_repository):
+        mock_repository.return_value.portfolio_tickers.return_value = []
         status, body = self.request("POST", "/api/training", {"horizon": 12})
         self.assertEqual(status, 202)
         self.assertEqual(body["horizon"], 12)
@@ -124,6 +126,73 @@ class TrainingEndpointTests(HTTPTestBase):
         response = conn.getresponse()
         self.assertEqual(response.status, 400)
         conn.close()
+
+
+class PortfolioEndpointTests(HTTPTestBase):
+    @patch("midas_core.interfaces.http.PostgresRepository")
+    def test_lists_persisted_positions(self, mock_repository):
+        mock_repository.return_value.portfolio_assets.return_value = [
+            {"ticker": "PETR4", "quantity": 3},
+            {"ticker": "VALE3", "quantity": 1.5},
+        ]
+        status, body = self.request("GET", "/api/portfolio/list")
+        self.assertEqual(status, 200)
+        self.assertEqual(body["tickers"], ["PETR4", "VALE3"])
+        self.assertEqual(body["portfolio"], {"PETR4": 3.0, "VALE3": 1.5})
+
+    @patch("midas_core.interfaces.http.PostgresRepository")
+    @patch("midas_core.infrastructure.yahoo.fetch_history")
+    def test_add_imports_and_persists_position(self, mock_history, mock_repository):
+        repository = mock_repository.return_value
+        mock_history.return_value = {"ticker": "PETR4"}
+        repository.save_stocks.return_value = 42
+        repository.set_portfolio_asset.return_value = [{"ticker": "PETR4", "quantity": 10}]
+        status, body = self.request("POST", "/api/portfolio/add", {"ticker": "petr4", "quantity": 10})
+        self.assertEqual(status, 200)
+        repository.set_portfolio_asset.assert_called_once_with("PETR4", 10)
+        self.assertEqual(body["portfolio"], {"PETR4": 10.0})
+        self.assertEqual(body["import"], {"ticker": "PETR4", "prices": 42, "status": "imported"})
+
+    @patch("midas_core.interfaces.http.PostgresRepository")
+    @patch("midas_core.infrastructure.yahoo.fetch_history")
+    def test_add_returns_502_and_does_not_persist_when_import_fails(self, mock_history, mock_repository):
+        from midas_core.infrastructure.yahoo import YahooFinanceError
+        mock_history.side_effect = YahooFinanceError("indisponível")
+        status, body = self.request("POST", "/api/portfolio/add", {"ticker": "PETR4", "quantity": 10})
+        self.assertEqual(status, 502)
+        self.assertIn("Yahoo Finance", body["error"])
+        mock_repository.return_value.set_portfolio_asset.assert_not_called()
+
+    @patch("midas_core.interfaces.http.PostgresRepository")
+    def test_removes_persisted_position(self, mock_repository):
+        repository = mock_repository.return_value
+        repository.remove_portfolio_asset.return_value = True
+        repository.portfolio_assets.return_value = []
+        status, body = self.request("POST", "/api/portfolio/remove", {"ticker": "PETR4"})
+        self.assertEqual(status, 200)
+        repository.remove_portfolio_asset.assert_called_once_with("PETR4")
+        self.assertEqual(body["tickers"], [])
+        self.assertIn("removido", body["message"])
+
+    @patch("midas_core.interfaces.http.PostgresRepository")
+    @patch("midas_core.infrastructure.yahoo.fetch_dividends")
+    def test_dividends_uses_persisted_quantities(self, mock_dividends, mock_repository):
+        mock_repository.return_value.portfolio_assets.return_value = [{"ticker": "PETR4", "quantity": 10}]
+        mock_dividends.return_value = {"annual_dividend": 2.5, "dividend_yield": 0.1, "price": 25}
+        status, body = self.request("GET", "/api/portfolio/dividends")
+        self.assertEqual(status, 200)
+        self.assertEqual(body["dividends"]["PETR4"]["quantity"], 10.0)
+        self.assertEqual(body["dividends"]["PETR4"]["total_dividends"], 25.0)
+
+    @patch("midas_core.interfaces.http.PostgresRepository")
+    @patch("midas_core.interfaces.http.build_portfolio_report")
+    def test_report_uses_persisted_tickers(self, mock_report, mock_repository):
+        mock_repository.return_value.portfolio_tickers.return_value = ["PETR4"]
+        mock_report.return_value = {"portfolio": [], "horizon": 6}
+        status, body = self.request("GET", "/api/portfolio?horizon=6")
+        self.assertEqual(status, 200)
+        self.assertEqual(body["horizon"], 6)
+        mock_report.assert_called_once_with(6, ["PETR4"])
 
 
 class FavoritesEndpointTests(HTTPTestBase):
