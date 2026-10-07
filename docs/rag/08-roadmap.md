@@ -30,3 +30,7 @@ Transformar a carteira em uma fonte de verdade persistida e auditável. Esta é 
 
 - Autenticação, autorização e isolamento.
 - Múltiplas carteiras, alertas e observabilidade.
+
+## Execução rastreada
+
+O roadmap possui issues detalhadas no GitHub, com ordem, fronteiras e critérios de aceite em `docs/issue-workflow.md`. Antes de iniciar uma entrega, usar a issue correspondente como contrato de escopo.
