@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "entrypoint": "00-router.md",
+  "default_retrieval": {
+    "max_domain_modules": 2,
+    "exclude": [".env", "node_modules", "yarn.lock", "package-lock.json", "dist", "build"],
+    "require_entrypoint_first": true
+  },
+  "modules": [
+    {
+      "id": "product",
+      "path": "01-product.md",
+      "keywords": ["produto", "escopo", "limite", "recomendação", "investimento", "tom"],
+      "code_roots": ["web/app.js", "web/layout.js", "web/style.css"]
+    },
+    {
+      "id": "market-data",
+      "path": "02-market-data.md",
+      "keywords": ["cotação", "preço", "ticker", "yahoo", "brapi", "importação", "fonte", "histórico"],
+      "code_roots": ["midas_core/infrastructure", "midas_core/application/market_import.py", "midas_core/application/market_import_yahoo.py"]
+    },
+    {
+      "id": "portfolio",
+      "path": "03-portfolio.md",
+      "keywords": ["carteira", "posição", "compra", "venda", "preço médio", "dividendo", "JCP", "P&L", "provento"],
+      "code_roots": ["midas_core/interfaces/http.py", "midas_core/application/analysis.py", "web/app.js"]
+    },
+    {
+      "id": "quant-research",
+      "path": "04-quant-research.md",
+      "keywords": ["modelo", "treino", "treinamento", "previsão", "ranking", "candidato", "backtest", "validação", "dataset"],
+      "code_roots": ["midas_core/domain", "midas_core/training", "midas_core/application/datasets.py", "midas_core/application/training.py"]
+    },
+    {
+      "id": "web-ui",
+      "path": "05-web-ui.md",
+      "keywords": ["interface", "tela", "componente", "CSS", "filtro", "navegação", "mobile", "acessibilidade"],
+      "code_roots": ["web"]
+    },
+    {
+      "id": "api-jobs",
+      "path": "06-api-jobs.md",
+      "keywords": ["API", "endpoint", "rota", "HTTP", "JSON", "job", "fila", "erro", "status"],
+      "code_roots": ["midas_core/interfaces/http.py", "web/api.js"]
+    },
+    {
+      "id": "storage-security",
+      "path": "07-storage-security.md",
+      "keywords": ["PostgreSQL", "MongoDB", "banco", "usuário", "autenticação", "segurança", "token", "segredo"],
+      "code_roots": ["infra", "midas_core/infrastructure/database.py", "midas_core/infrastructure/repositories.py", "midas_core/config.py"]
+    },
+    {
+      "id": "roadmap",
+      "path": "08-roadmap.md",
+      "keywords": ["roadmap", "prioridade", "fase", "planejamento", "próximo passo"],
+      "code_roots": []
+    },
+    {
+      "id": "quality",
+      "path": "09-quality.md",
+      "keywords": ["teste", "bug", "qualidade", "aceite", "regressão", "monitoramento"],
+      "code_roots": ["test_analysis.py", "test_http.py", "test_market_api.py", "test_midas.py"]
+    },
+    {
+      "id": "codebase-catalog",
+      "path": "10-codebase-catalog.md",
+      "keywords": ["arquivo", "script", "catálogo", "inventário", "legado", "onde fica", "arquitetura"],
+      "code_roots": ["midas_core", "web", "scripts", "infra", "config"]
+    }
+  ]
+}
