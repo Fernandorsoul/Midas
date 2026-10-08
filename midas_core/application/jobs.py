@@ -251,7 +251,8 @@ class JobWorker:
         }
 
     def _run_import(self, job):
-        from midas_core.infrastructure.yahoo import SOURCE, YahooFinanceError, fetch_history
+        from midas_core.application.market_fallback import fetch_price_history
+        from midas_core.infrastructure.yahoo import SOURCE as YAHOO_SOURCE
 
         payload = job["payload"] or {}
         ticker = payload.get("ticker")
@@ -261,16 +262,19 @@ class JobWorker:
 
         self._progress(job, "import", 20, {"message": f"Importando cotações de {ticker}..."})
         try:
-            stock = fetch_history(ticker, market_range)
-        except YahooFinanceError as error:
-            raise RuntimeError("Não foi possível importar cotações do Yahoo Finance.") from error
-        price_count = self.repository.save_stocks([stock], SOURCE)
+            fetched = fetch_price_history(ticker, market_range)
+        except RuntimeError as error:
+            raise RuntimeError(str(error)) from error
+        stock = fetched["stock"]
+        source = fetched["source"] or YAHOO_SOURCE
+        price_count = self.repository.save_stocks([stock], source)
         result = {
-            "message": f"{ticker} importado.",
+            "message": f"{ticker} importado via {source}.",
             "ticker": ticker,
             "prices": price_count,
             "status": "imported",
-            "source": SOURCE,
+            "source": source,
+            "fallback": fetched.get("fallback"),
             "collection": {
                 "status": "succeeded",
                 "imported": 1,

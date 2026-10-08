@@ -31,6 +31,7 @@ Há testes de regras de análise, HTTP, importação e treinamento. Endpoints b�
 
 - `test_market_quality.py` cobre política de fontes/fallback, série consistente, frescor/stale, distinção close vs adjusted_close, outcome de coleta (sucesso/parcial/falha) e disponibilidade de `fetch_fundamentals`.
 - `test_market_api.py` cobre normalização, resposta parcial da brapi e persistência de preço ajustado.
+- `test_market_fallback.py` cobre cadeia Yahoo→brapi, timeout/429, não-fallback em not_found/auth e mensagens seguras sem token.
 
 ## Cobertura patrimonial
 
@@ -84,3 +85,4 @@ Há testes de regras de análise, HTTP, importação e treinamento. Endpoints b�
 - `test_auth.py`
 - `test_migrations.py`
 - `test_rag.py`
+- `test_market_fallback.py`
