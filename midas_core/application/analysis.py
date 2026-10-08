@@ -3,7 +3,8 @@ import numpy as np
 
 from midas_core.domain.features import SUPPORTED_HORIZONS, latest_features, month_end_series
 from midas_core.domain.market_quality import PriceMetadata, assert_consistent_series, describe_price, resolve_price_source
-from midas_core.domain.regression import from_artifact, predict
+from midas_core.domain.model_artifacts import from_artifact, explain_linear
+from midas_core.domain.regression import predict
 from midas_core.infrastructure.repositories import MongoRepository, PostgresRepository
 from midas_core.infrastructure.yahoo import fetch_historical_fundamentals, YahooFinanceError
 
@@ -68,6 +69,20 @@ def build_report(horizon, mongo_repository=None, postgres_repository=None):
 
     validated = _is_validated(metrics, artifact)
     quantiles = (artifact or {}).get("parameters", {}).get("residual_quantiles", {})
+    explanation = None
+    if artifact is not None:
+        try:
+            model = from_artifact(artifact)
+            explanation = explain_linear(model, artifact.get("parameters", {}).get("features", []))
+            explanation["horizon_months"] = artifact.get("parameters", {}).get("horizon_months")
+            explanation["algorithm"] = artifact.get("parameters", {}).get("algorithm")
+            explanation["uncertainty"] = {
+                "p10": quantiles.get("p10"),
+                "p90": quantiles.get("p90"),
+                "mae": (metrics or {}).get("mae"),
+            }
+        except Exception:
+            explanation = None
     for asset in assets:
         features = asset.pop("_features")
         asset["opportunity"] = None
@@ -102,6 +117,15 @@ def build_report(horizon, mongo_repository=None, postgres_repository=None):
         "model_validated": validated,
         "model_run_date": run_date,
         "method": "temporal-model-selection-v3" if artifact else None,
+        "model_explanation": explanation,
+        "training": {
+            "horizon_months": (artifact or {}).get("parameters", {}).get("horizon_months", horizon),
+            "train_samples": (metrics or {}).get("train"),
+            "validation_samples": (metrics or {}).get("validation"),
+            "test_samples": (metrics or {}).get("test"),
+            "features": (artifact or {}).get("parameters", {}).get("features", []),
+            "algorithm": (artifact or {}).get("parameters", {}).get("algorithm"),
+        },
     }
 
 def set_favorite(asset_id, saved, repository=None):

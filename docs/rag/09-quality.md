@@ -32,6 +32,14 @@ Há testes de regras de análise, HTTP, importação e treinamento. Endpoints b�
 - `test_market_quality.py` cobre política de fontes/fallback, série consistente, frescor/stale, distinção close vs adjusted_close, outcome de coleta (sucesso/parcial/falha) e disponibilidade de `fetch_fundamentals`.
 - `test_market_api.py` cobre normalização, resposta parcial da brapi e persistência de preço ajustado.
 
+## Cobertura patrimonial
+
+- `test_wealth.py` cobre TWR sem distorção de aporte, XIRR, alocação, rebase de benchmarks e reconciliação do dashboard.
+
+## Cobertura de artefatos de modelo
+
+- `test_model_artifacts.py` cobre round-trip ridge/ensemble, rejeição de modelo não serializável, semântica de ensemble (2+ membros), explicação de fatores e bloqueio de publicação do run.
+
 ## Critérios de aceite transversais
 
 - Não perder dados de usuário ao reiniciar.
@@ -55,3 +63,5 @@ Há testes de regras de análise, HTTP, importação e treinamento. Endpoints b�
 - `test_portfolio_ledger.py`
 - `test_jobs.py`
 - `test_market_quality.py`
+- `test_wealth.py`
+- `test_model_artifacts.py`

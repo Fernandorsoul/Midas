@@ -32,8 +32,11 @@ Construir datasets, treinar modelos, salvar artefatos, validar temporalmente e g
 ## Implementação e limitações relevantes
 
 - A validação de relatório exige `model_version == 5`, não apenas boas métricas.
-- O modelo de inferência persistido é lido como `RidgeModel`. Modelos de árvore ou deep learning não possuem o mesmo formato de artefato (`weights`) e não são reidratados por `from_artifact`; confirmar e corrigir a serialização antes de depender desses candidatos em produção.
-- O ensemble avalia a média de modelos no teste, mas o modelo de produção usa somente o primeiro candidato selecionado para o artefato. Não descrever o artefato atual como ensemble persistido.
+- **Contrato de artefato versionado** (`midas_core/domain/model_artifacts.py`, `schema_version = 6`):
+  - Produção serializável: `ridge` e `ensemble_ridge` (2+ lineares).
+  - Árvore/deep são avaliadas na seleção, mas **não** publicam artefato; falha de serialização impede o run.
+  - Ensemble só recebe o rótulo `ensemble_ridge` com 2+ membros reais; caso contrário o algoritmo é o modelo único.
+- Relatório expõe `model_explanation` (fatores padronizados), incerteza (p10/p90/MAE), horizonte e contagens de amostras.
 - A função `_best_source` existe, mas não é usada por `publish_dataset`.
 
 ## Regra de candidato
@@ -48,8 +51,10 @@ Ao explicar um sinal, incluir horizonte, incerteza/faixa, data dos dados, métri
 
 - `midas_core/domain/features.py`
 - `midas_core/domain/regression.py`
+- `midas_core/domain/model_artifacts.py`
 - `midas_core/training/variables.py`
 - `midas_core/application/datasets.py`
 - `midas_core/application/training.py`
 - `midas_core/application/analysis.py`
+- `test_model_artifacts.py`
 - `web/EvaluationPanel.js`, `web/ValidationHistory.js`, `web/TrainingConsole.js`
