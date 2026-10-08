@@ -54,3 +54,10 @@ Gerenciar ativos acompanhados, quantidades, posições, operações e proventos 
 ## Dados mínimos da posição
 
 Quantidade, custo total, preço médio, cotação/data/fonte, valor de mercado, resultado realizado/não realizado, proventos, despesas, fluxo de caixa, retorno total e moeda.
+
+## Dashboard patrimonial
+
+- `GET /api/wealth/dashboard` (`midas_core/application/wealth_dashboard.py`, `midas_core/domain/wealth.py`).
+- **TWR** é o retorno da estratégia (aportes/retiradas isolados); **XIRR** é o retorno pessoal quando há fluxo de caixa.
+- Benchmarks: CDI (BCB SGS 12) e Ibovespa (Yahoo `^BVSP`), rebased em 100, com fonte/período/data de atualização.
+- Valores consolidados reconciliam com posições e operações; comparação é informativa, não recomendação.

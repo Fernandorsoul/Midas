@@ -18,6 +18,7 @@ from midas_core.application.jobs import (
     JobWorker,
 )
 from midas_core.application.market_quality import market_quality_report
+from midas_core.application.wealth_dashboard import wealth_dashboard
 from midas_core.application.portfolio_ledger import (
     delete_operation,
     edit_operation,
@@ -63,6 +64,14 @@ class RequestHandler(SimpleHTTPRequestHandler):
         if url.path == "/api/market/quality":
             try:
                 self.respond(200, market_quality_report(repository=PostgresRepository()))
+            except (psycopg.Error, PyMongoError, KeyError):
+                self.respond(503, {"error": "Não foi possível acessar os bancos de dados."})
+            return
+        if url.path == "/api/wealth/dashboard":
+            try:
+                self.respond(200, wealth_dashboard(repository=PostgresRepository()))
+            except ValueError as error:
+                self.respond(400, {"error": str(error)})
             except (psycopg.Error, PyMongoError, KeyError):
                 self.respond(503, {"error": "Não foi possível acessar os bancos de dados."})
             return
