@@ -38,7 +38,9 @@ from midas_core.application.portfolio_ledger import (
 from midas_core.config import PROJECT_ROOT, Settings
 from midas_core.infrastructure.repositories import PostgresRepository
 
-WEB_ROOT = PROJECT_ROOT / "web"
+# Serve o bundle Vite quando existir; senão, os fontes em web/ (apenas com Vite).
+_WEB_SOURCE = PROJECT_ROOT / "web"
+WEB_ROOT = _WEB_SOURCE / "dist" if (_WEB_SOURCE / "dist" / "index.html").exists() else _WEB_SOURCE
 
 
 class MarketDataUnavailable(RuntimeError):
