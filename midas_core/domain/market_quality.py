@@ -137,3 +137,67 @@ def collection_outcome(imported_count, failed_count):
     if failed_count > 0:
         return {"status": "partial", "imported": imported_count, "failed": failed_count}
     return {"status": "succeeded", "imported": imported_count, "failed": 0}
+
+
+# --- Fallback de fontes e classificação de falhas ---
+
+ERROR_TIMEOUT = "timeout"
+ERROR_RATE_LIMIT = "rate_limit"
+ERROR_AUTH = "auth"
+ERROR_NOT_FOUND = "not_found"
+ERROR_INVALID = "invalid"
+ERROR_UNKNOWN = "unknown"
+
+# Erros que justificam tentar a próxima fonte.
+RETRYABLE_ERROR_KINDS = frozenset({ERROR_TIMEOUT, ERROR_RATE_LIMIT, ERROR_UNKNOWN})
+
+
+def classify_fetch_error(message: str) -> str:
+    """Classifica falha de coleta sem expor token/URL sensível."""
+    text = (message or "").lower()
+    if "429" in text or "rate" in text or "quota" in text or "retry-after" in text:
+        return ERROR_RATE_LIMIT
+    if "timeout" in text or "timed out" in text or "tempo esgotado" in text or "conectar" in text:
+        return ERROR_TIMEOUT
+    if "401" in text or "403" in text or "token" in text or "acesso" in text:
+        return ERROR_AUTH
+    if "404" in text or "nenhum dado" in text or "não retornou" in text or "nao retornou" in text:
+        return ERROR_NOT_FOUND
+    if "json" in text or "formato" in text or "inesperado" in text:
+        return ERROR_INVALID
+    return ERROR_UNKNOWN
+
+
+def should_try_fallback(error_kind: str) -> bool:
+    """Fallback quando a falha é transitória/limite; não para ticker inexistente."""
+    return error_kind in RETRYABLE_ERROR_KINDS or error_kind == ERROR_INVALID
+
+
+def next_price_source(already_tried) -> str | None:
+    """Próxima fonte oficial de preços ainda não tentada (ordem da política)."""
+    policy = SOURCE_POLICY["prices"]
+    chain = (policy["primary"],) + tuple(policy["fallbacks"])
+    tried = set(already_tried or ())
+    for source in chain:
+        if source not in tried:
+            return source
+    return None
+
+
+def fallback_report(ticker: str, attempts):
+    """Resumo seguro da cadeia de fallback por ativo.
+
+    `attempts` = lista de dicts: {source, ok, error_kind, message}.
+    """
+    used = next((a["source"] for a in attempts if a.get("ok")), None)
+    errors = [
+        {"source": a["source"], "kind": a.get("error_kind") or ERROR_UNKNOWN,
+         "message": (a.get("message") or "")[:200]}
+        for a in attempts if not a.get("ok")
+    ]
+    return {
+        "ticker": ticker,
+        "used_source": used,
+        "attempts": errors,
+        "status": "succeeded" if used else "failed",
+    }

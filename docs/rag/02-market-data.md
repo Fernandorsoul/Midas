@@ -36,6 +36,15 @@ Cadastro de ativos, histórico diário de preços, fontes externas e importaçã
 
 `collection_outcome` produz `succeeded` / `partial` / `failed` com contagens. Importação parcial nunca é sucesso; falha integral não persiste. Jobs de importação registram `collection` no resultado.
 
+## Fallback Yahoo → brapi
+
+- Orquestrador: `midas_core/application/market_fallback.py` (`fetch_price_history`).
+- Tenta `yahoo.finance` e, em falha **retratável** (timeout, 429/quota, formato), tenta `brapi.dev`.
+- **Não** faz fallback em ticker inexistente (`not_found`) ou auth (401/403).
+- 429 da brapi usa `Retry-After` (ou backoff exponencial, máx. 30s) e mensagem segura sem token.
+- Resultado inclui `fallback.used_source` e `fallback.attempts` (kind + mensagem truncada).
+- Job de import grava `source` efetiva e o relatório de fallback no `result`.
+
 ## Seleção de preços para análise
 
 `assets_with_prices()` escolhe a fonte da série com preferência oficial sobre experimental e recência dentro da classe; devolve até 1.260 pregões **dessa mesma fonte**, em ordem cronológica. A fonte pode variar por ativo, mas não dentro da série exibida.
@@ -81,6 +90,7 @@ Cadastro de ativos, histórico diário de preços, fontes externas e importaçã
 
 - `midas_core/domain/market_quality.py`
 - `midas_core/application/market_quality.py`
+- `midas_core/application/market_fallback.py`
 - `midas_core/infrastructure/brapi.py`
 - `midas_core/infrastructure/yahoo.py`
 - `midas_core/application/market_import.py`
@@ -88,3 +98,4 @@ Cadastro de ativos, histórico diário de preços, fontes externas e importaçã
 - `midas_core/infrastructure/repositories.py`
 - `midas_core/application/analysis.py`
 - `test_market_quality.py`
+- `test_market_fallback.py`
