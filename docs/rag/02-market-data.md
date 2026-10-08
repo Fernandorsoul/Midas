@@ -7,9 +7,22 @@ Cadastro de ativos, histórico diário de preços, fontes externas e importaçã
 ## Estado atual
 
 - PostgreSQL armazena ativos e preços diários.
-- `brapi.dev` e Yahoo Finance são fontes usadas pelo projeto.
-- O relatório escolhe a fonte mais recente disponível por ativo para exibição.
-- Preço mostrado no painel é fechamento diário; treinamento prioriza fechamento ajustado.
+- Fontes oficiais: `yahoo.finance` (primária) e `brapi.dev` (fallback) para preços.
+- Dividendos e fundamentos pontuais: `yahoo.finance`.
+- `enriched` e `macro` permanecem **experimentais e fora do pipeline principal**.
+- Cada ticker exibe uma série de **fonte única**; a seleção prefere fonte oficial à experimental e, na mesma classe, a mais recente.
+
+## Política de fontes
+
+| Dado | Primária | Fallback | Experimental |
+|---|---|---|---|
+| Preços | `yahoo.finance` | `brapi.dev` | `enriched` |
+| Dividendos | `yahoo.finance` | — | — |
+| Fundamentos | `yahoo.finance` | — | `enriched` |
+
+- Código: `midas_core/domain/market_quality.py` (`SOURCE_POLICY`, `resolve_price_source`).
+- Relatório e `GET /api/market/quality` expõem `source`, `price_date`, `ingested_at`, `age_days`, `stale`, `quality`, `display_price_field` e `training_price_field`.
+- Exibição usa `close`; treino usa `adjusted_close` quando existe (senão `close`).
 
 ## Fluxo de importação confirmado
 
@@ -19,16 +32,29 @@ Cadastro de ativos, histórico diário de preços, fontes externas e importaçã
 4. Yahoo normaliza tickers brasileiros com o sufixo `.SA`, baixa histórico sem ajuste automático e preserva `Close`, `Adj Close` e volume quando válidos.
 5. `PostgresRepository.save_stocks` cria/atualiza o ativo e faz upsert por `(asset_id, price_date, source)`.
 
+## Resultado de coleta (não mascarar falha)
+
+`collection_outcome` produz `succeeded` / `partial` / `failed` com contagens. Importação parcial nunca é sucesso; falha integral não persiste. Jobs de importação registram `collection` no resultado.
+
+## Fallback Yahoo → brapi
+
+- Orquestrador: `midas_core/application/market_fallback.py` (`fetch_price_history`).
+- Tenta `yahoo.finance` e, em falha **retratável** (timeout, 429/quota, formato), tenta `brapi.dev`.
+- **Não** faz fallback em ticker inexistente (`not_found`) ou auth (401/403).
+- 429 da brapi usa `Retry-After` (ou backoff exponencial, máx. 30s) e mensagem segura sem token.
+- Resultado inclui `fallback.used_source` e `fallback.attempts` (kind + mensagem truncada).
+- Job de import grava `source` efetiva e o relatório de fallback no `result`.
+
 ## Seleção de preços para análise
 
-`assets_with_prices()` seleciona, para cada ativo, a fonte cujo registro mais recente possui a maior combinação de `price_date`, `ingested_at` e nome da fonte; então devolve até 1.260 pregões dessa mesma fonte, em ordem cronológica. Portanto, a fonte pode variar por ativo, mas não dentro da série exibida.
+`assets_with_prices()` escolhe a fonte da série com preferência oficial sobre experimental e recência dentro da classe; devolve até 1.260 pregões **dessa mesma fonte**, em ordem cronológica. A fonte pode variar por ativo, mas não dentro da série exibida.
 
 ## Falhas e cuidados conhecidos
 
 - A brapi tenta novamente falhas de rede/timeout e HTTP 429 com backoff exponencial; erros 401/403 indicam token ausente ou sem acesso.
-- A importação Yahoo continua os demais tickers se um falhar e devolve `warnings`; falha integralmente se nenhum ativo puder ser importado.
+- A importação Yahoo continua os demais tickers se um falhar e devolve `warnings` + `collection.partial`; falha integralmente se nenhum ativo puder ser importado.
 - Dividendos consultados pelo Yahoo são dados correntes de 12 meses, não eventos persistidos.
-- `yahoo.py` contém lógica de fundamentos após o retorno de `fetch_dividends`; ela está inalcançável e não há uma função pública `fetch_fundamentals` definida. Não assumir que fundamentos pontuais estejam disponíveis até esse defeito ser corrigido.
+- `fetch_fundamentals` existe e devolve `FundamentalData` pontual; `fetch_historical_fundamentals` segue disponível para o enriquecimento.
 
 ## Regras importantes
 
@@ -37,15 +63,39 @@ Cadastro de ativos, histórico diário de preços, fontes externas e importaçã
 - Não esconder erro de importação como se fosse atualização concluída.
 - Antes de alterar fonte ou regra de prioridade, verificar impacto no dataset de treinamento.
 
+## Alternativas gratuitas avaliadas (2026-10)
+
+| Fonte | Custo | Dados B3 | Limites free | Papel no Midas |
+|---|---|---|---|---|
+| `yahoo.finance` (`yfinance`) | Free (não oficial) | Ações/FIIs com sufixo `.SA`; dividendos | Não documentado; throttle possível | **Primária de preços** |
+| `brapi.dev` | Free + planos | Nativo: ações, FIIs, opções, TD, macro, câmbio, cripto | Key free com quota; sem key só `PETR4`/`VALE3`/`MGLU3`/`ITUB4`; 429 com `Retry-After` | **Fallback de preços** |
+| BCB SGS (`api.bcb.gov.br`) | Free oficial | Macro (CDI, SELIC, IPCA) — não equities | Sem key | Benchmarks/macro |
+| Alpha Vantage | Free key | Global; B3 inconsistente | ~25 req/dia; `outputsize=full` premium | Experimental (fundamentos) |
+| Finnhub / Twelve Data / Marketstack | Free tier | B3 pobre ou ausente | 5–25 req/min, dezenas/dia | Não adotar para B3 |
+
+### Decisão
+
+- **Não trocar a brapi** agora: é a única free com FIIs, Tesouro Direto e macro brasileira de qualidade.
+- Manter Yahoo primário + brapi fallback (política `SOURCE_POLICY`).
+- BCB permanece para CDI/SELIC/IPCA (wealth/benchmarks).
+- Não existe substituto gratuito **oficial** da B3 para cotações; dados em tempo real são pagos.
+
+### Pontos de atenção
+
+- Yahoo pode throttle/bloquear sem aviso — o fallback brapi e o outcome `partial` cobrem isso.
+- Alpha Vantage não cobre B3 de forma confiável; não virar fonte principal.
+- Qualquer nova fonte precisa de `source`/`price_date` e entrada em `SOURCE_POLICY` + testes de fallback.
+
 ## Pontos de código
 
+- `midas_core/domain/market_quality.py`
+- `midas_core/application/market_quality.py`
+- `midas_core/application/market_fallback.py`
 - `midas_core/infrastructure/brapi.py`
 - `midas_core/infrastructure/yahoo.py`
 - `midas_core/application/market_import.py`
 - `midas_core/application/market_import_yahoo.py`
 - `midas_core/infrastructure/repositories.py`
 - `midas_core/application/analysis.py`
-
-## Evolução desejada
-
-Definir fonte primária/fallback por tipo de dado e persistir metadados de coleta, qualidade e atraso.
+- `test_market_quality.py`
+- `test_market_fallback.py`

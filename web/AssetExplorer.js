@@ -22,7 +22,7 @@ export function AssetExplorer({ assets, filters, setFilters, horizon, setHorizon
     h(SectionTitle, {
       title: 'Potenciais oportunidades',
       action: h('label', null, 'Horizonte', h('select', { value: horizon, onChange: event => setHorizon(Number(event.target.value)) },
-        [12, 24, 36].map(value => h('option', { key: value, value }, `${value} meses`)),
+        [6, 12, 24, 36].map(value => h('option', { key: value, value }, `${value} meses`)),
       )),
     }, 'Ordenadas pelo sinal validado e pela estimativa do modelo.'),
     h('div', { className: 'filters' },

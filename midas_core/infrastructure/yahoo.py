@@ -118,7 +118,10 @@ def fetch_dividends(ticker: str) -> dict:
         "dividend_yield": dividend_yield,
         "price": price,
     }
-    """Busca dados fundamentalistas do Yahoo Finance."""
+
+
+def fetch_fundamentals(ticker: str) -> FundamentalData:
+    """Busca dados fundamentalistas pontuais do Yahoo Finance."""
     yahoo_ticker = normalize_ticker(ticker)
     try:
         stock = yf.Ticker(yahoo_ticker)

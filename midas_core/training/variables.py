@@ -69,7 +69,7 @@ class VariableTrainingConfig:
 
 @dataclass(frozen=True)
 class TrainingResult:
-    model: RidgeModel
+    model: object  # RidgeModel ou EnsembleRidgeModel
     metrics: dict
     parameters: dict
 
@@ -181,30 +181,40 @@ class VariableTrainer:
         if not all(np.isfinite(value) for value in float_metrics):
             raise ValueError("Treinamento produziu metricas invalidas.")
 
-        # Para produção, usar ensemble se disponível
+        # Para produção: ensemble real (2+ lineares serializáveis) ou modelo único.
+        # Nunca rotular ensemble quando apenas um modelo é usado.
         all_features, all_targets = self._arrays(rows)
+        production_model = self._fit_candidate(all_features, all_targets, selected)
+        production_algorithm = selected.algorithm
+        ensemble_members = None
         if self.config.use_ensemble and selected.algorithm == "ensemble_boosted":
-            # Treinar top modelos com todos os dados
-            all_selection_results = selection_results
-            linear_models = [r for r in all_selection_results if r["algorithm"] in ("ridge_sklearn", "lasso_sklearn", "elasticnet_sklearn", "huber_sklearn")]
-            xgb_models = [r for r in all_selection_results if r["algorithm"] == "xgboost"]
-            lgbm_models = [r for r in all_selection_results if r["algorithm"] == "lightgbm"]
-            top_linear = sorted(linear_models, key=lambda x: x["mae"])[:2] if linear_models else []
-            top_xgb = sorted(xgb_models, key=lambda x: x["mae"])[:1] if xgb_models else []
-            top_lgbm = sorted(lgbm_models, key=lambda x: x["mae"])[:1] if lgbm_models else []
-            top_models = top_linear + top_xgb + top_lgbm
-            if len(top_models) < 3:
-                top_models = sorted(all_selection_results, key=lambda x: x["mae"])[:3]
+            from midas_core.domain.regression import RidgeModel
+            linear_results = [
+                r for r in selection_results
+                if r["algorithm"] in ("ridge_sklearn", "lasso_sklearn", "elasticnet_sklearn", "huber_sklearn", "ridge")
+            ]
+            linear_results = sorted(linear_results, key=lambda x: x["mae"])[:3]
+            members = []
+            for model_result in linear_results:
+                candidate = ModelCandidate(model_result["algorithm"], model_result["parameters"])
+                fitted = self._fit_candidate(all_features, all_targets, candidate)
+                # Apenas lineares (RidgeModel) entram no artefato de produção
+                if hasattr(fitted, "weights") and not hasattr(fitted, "estimator"):
+                    members.append(fitted)
+            if len(members) >= 2:
+                from midas_core.domain.regression import EnsembleRidgeModel
+                production_model = EnsembleRidgeModel(tuple(members))
+                production_algorithm = "ensemble_ridge"
+                ensemble_members = [m_result["algorithm"] for m_result in linear_results[: len(members)]]
             else:
-                top_models = top_models[:5]
-            production_model = self._fit_candidate(all_features, all_targets, 
-                ModelCandidate(top_models[0]["algorithm"], top_models[0]["parameters"]))
-        else:
-            production_model = self._fit_candidate(all_features, all_targets, selected)
+                # Sem 2+ serializáveis: mantém modelo único com nome honesto
+                production_algorithm = selected.algorithm.replace("ensemble_boosted", "ridge")
+                if production_algorithm == "ensemble_boosted":
+                    production_algorithm = "ridge"
         parameters = {
             "model_version": self.config.model_version,
             "features": list(self.config.feature_names),
-            "algorithm": selected.algorithm,
+            "algorithm": production_algorithm,
             "algorithm_parameters": selected.parameters if hasattr(selected, 'parameters') else {},
             "alpha": selected.parameters.get("alpha") if hasattr(selected, 'parameters') else None,
             "alpha_candidates": list(self.config.alpha_candidates),
@@ -217,6 +227,8 @@ class VariableTrainer:
             },
             "sklearn_enabled": self._sklearn_available(),
             "ensemble_enabled": self.config.use_ensemble,
+            "ensemble_members": ensemble_members,
+            "horizon_months": self.config.horizon_months if hasattr(self.config, "horizon_months") else None,
         }
         return TrainingResult(production_model, metrics, parameters)
 

@@ -37,6 +37,14 @@ Este catálogo registra todos os arquivos relevantes de código, configuração,
 | `midas_core/application/training.py` | Carrega amostras, treina, salva artefato MongoDB e run PostgreSQL com compensação simples. |
 | `midas_core/application/analysis.py` | Gera ranking, busca o artefato mais recente utilizável, calcula oportunidade e relatório de carteira. |
 | `midas_core/application/portfolio_ledger.py` | Caso de uso do livro de operações: payload, CRUD com revalidação e resumo de posição/P&L. |
+| `midas_core/application/jobs.py` | Jobs persistidos: enfileirar, consultar, cancelar, retry e `JobWorker`. |
+| `midas_core/application/market_quality.py` | Relatório de proveniência e frescor dos preços. |
+| `midas_core/domain/jobs.py` | Estados, transições e erro seguro de jobs. |
+| `midas_core/domain/market_quality.py` | Política de fontes, frescor e outcome de coleta. |
+| `midas_core/domain/model_artifacts.py` | Contrato versionado de artefatos e explicação de fatores. |
+| `midas_core/domain/wealth.py` | TWR, XIRR, alocação e rebase de benchmarks. |
+| `midas_core/application/wealth_dashboard.py` | Dashboard patrimonial e comparação com CDI/Ibovespa. |
+| `midas_core/worker.py` | Entrypoint do worker dedicado de jobs. |
 | `midas_core/application/market_import.py` | Importador brapi com validação, parsing e persistência. |
 | `midas_core/application/market_import_yahoo.py` | Importador Yahoo tolerante a falhas parciais. |
 | `midas_core/application/__init__.py` | Marcador de pacote. |
@@ -46,7 +54,7 @@ Este catálogo registra todos os arquivos relevantes de código, configuração,
 | Arquivo | Papel |
 |---|---|
 | `midas_core/infrastructure/brapi.py` | Cliente HTTP brapi v2, ticker seguro, retries de rede/429 e token Bearer. |
-| `midas_core/infrastructure/yahoo.py` | Histórico, dividendos e fundamentos Yahoo. Há código de fundamentos pontuais inalcançável após retorno de dividendos; `fetch_fundamentals` não é função pública disponível. |
+| `midas_core/infrastructure/yahoo.py` | Histórico, dividendos e fundamentos Yahoo (`fetch_fundamentals` pontual e `fetch_historical_fundamentals`). |
 | `midas_core/infrastructure/enrichment.py` | Enriquecimento experimental com Yahoo, brapi e Alpha Vantage; mescla por data e preço. Chama `fetch_fundamentals` inexistente somente dentro de bloco protegido, portanto cai em fallback de nome. |
 | `midas_core/infrastructure/macro.py` | Consulta séries BCB (Selic, IPCA, dólar e desemprego) com cache local de 24h; as features macro não estão ligadas ao vetor atual. |
 | `midas_core/infrastructure/database.py` | Fábricas psycopg e MongoClient. |
@@ -75,6 +83,7 @@ Este catálogo registra todos os arquivos relevantes de código, configuração,
 | `web/react.js` | Adaptador de imports React. |
 | `web/app.js` | Estado principal, carregamento paralelo, páginas e ações de carteira/treino. |
 | `web/OperationsLedger.js` | Formulário de operações, histórico e resumo de posição na carteira. |
+| `web/WealthDashboard.js` | Patrimônio, TWR/XIRR, alocação e gráficos de benchmarks. |
 | `web/api.js` | Cliente fetch e contratos das rotas HTTP. |
 | `web/layout.js` | Sidebar e navegação local. |
 | `web/AssetExplorer.js` | Filtros, tabela de ativos e favoritos. |
@@ -97,7 +106,11 @@ Este catálogo registra todos os arquivos relevantes de código, configuração,
 | `infra/postgres/01-init.sh` | Roles, tabelas e privilégios do PostgreSQL operacional. |
 | `infra/postgres/migrations/001-persistent-portfolio.sql` | Tabelas `portfolios` e `portfolio_assets`. |
 | `infra/postgres/migrations/002-portfolio-operations.sql` | Tabela `portfolio_operations` e invariantes do livro razão. |
-| `scripts/migrate_postgres.py` | Aplica migrations em ordem via Docker. |
+| `infra/postgres/migrations/003-jobs.sql` | Tabela `jobs` e índice de treino único ativo. |
+| `scripts/migrate_postgres.py` | Executor versionado de migrações com `schema_migrations` e checksum. |
+| `scripts/check_quality.py` | JS + testes Python + healthcheck em um comando. |
+| `scripts/validate_rag.py` | Valida manifesto e módulos RAG. |
+| `.github/workflows/ci.yml` | CI: sintaxe JS, testes e migrações idempotentes. |
 | `infra/mongo/01-init.js` | Usuário, coleções, validadores e índices MongoDB. |
 | `infra/rag-postgres/01-init.sql` | Extensão pgvector e tabela/índices `rag_chunks`. |
 | `config/stock-universe.txt` | Universo manual de 34 tickers B3 para importação. |
@@ -114,6 +127,10 @@ Este catálogo registra todos os arquivos relevantes de código, configuração,
 | `test_midas.py` | Expurgo temporal, fatores sem futuro, correlação e treinador. |
 | `test_portfolio.py` | Cálculo de posição, P&L e rejeição de venda descoberta. |
 | `test_portfolio_ledger.py` | Caso de uso do livro, edição/exclusão controladas e resumo. |
+| `test_jobs.py` | Transições, worker, retry e recuperação de jobs. |
+| `test_market_quality.py` | Fontes, frescor, coleta parcial e fundamentos Yahoo. |
+| `test_model_artifacts.py` | Serialização, ensemble e bloqueio de run não serializável. |
+| `test_wealth.py` | TWR, XIRR, alocação, rebase e dashboard patrimonial. |
 | `README.md` | Instalação, importação, treino, avisos de risco e comandos. |
 | `docs/architecture.md` | Camadas, fluxos e regras arquiteturais. |
 | `docs/data-model.md` | Modelo lógico, invariantes e ligação entre bancos. |

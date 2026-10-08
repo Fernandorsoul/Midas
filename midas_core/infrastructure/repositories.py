@@ -47,11 +47,14 @@ class PostgresRepository:
                    FROM assets a WHERE NOT a.is_demo ORDER BY a.ticker"""
             ).fetchall()
             for asset in assets:
+                # Fonte da série: oficial (yahoo/brapi) antes de experimental;
+                # dentro da mesma classe, a mais recente. A série nunca mistura fontes.
                 asset["prices"] = connection.execute(
-                    """SELECT price_date,close,adjusted_close,source FROM daily_prices
+                    """SELECT price_date,close,adjusted_close,source,ingested_at FROM daily_prices
                        WHERE asset_id=%s AND source=(
                          SELECT source FROM daily_prices WHERE asset_id=%s
-                         ORDER BY price_date DESC,ingested_at DESC,source LIMIT 1)
+                         ORDER BY CASE WHEN source IN ('yahoo.finance','brapi.dev') THEN 0 ELSE 1 END,
+                                  price_date DESC,ingested_at DESC,source LIMIT 1)
                        ORDER BY price_date DESC LIMIT 1260""",
                     (asset["id"], asset["id"]),
                 ).fetchall()[::-1]
@@ -264,19 +267,247 @@ class PostgresRepository:
         with self._connector() as connection:
             if source:
                 return connection.execute(
-                    """SELECT p.close,p.price_date,p.source
+                    """SELECT p.close,p.adjusted_close,p.price_date,p.source,p.ingested_at
                        FROM daily_prices p JOIN assets a ON a.id=p.asset_id
                        WHERE a.ticker=%s AND p.source=%s
                        ORDER BY p.price_date DESC LIMIT 1""",
                     (ticker, source),
                 ).fetchone()
             return connection.execute(
-                """SELECT p.close,p.price_date,p.source
+                """SELECT p.close,p.adjusted_close,p.price_date,p.source,p.ingested_at
                    FROM daily_prices p JOIN assets a ON a.id=p.asset_id
                    WHERE a.ticker=%s
-                   ORDER BY p.price_date DESC,p.ingested_at DESC LIMIT 1""",
+                   ORDER BY CASE WHEN p.source IN ('yahoo.finance','brapi.dev') THEN 0 ELSE 1 END,
+                            p.price_date DESC,p.ingested_at DESC LIMIT 1""",
                 (ticker,),
             ).fetchone()
+
+    # --- Jobs persistidos ---
+
+    def insert_job(self, job_type, payload, step="queued", user_id=None):
+        with self._connector() as connection:
+            connection.execute("SELECT pg_advisory_xact_lock(741211)")
+            active = connection.execute(
+                """SELECT job_type FROM jobs
+                   WHERE status IN ('queued','running')
+                   FOR UPDATE""",
+            ).fetchall()
+            active_types = {row["job_type"] for row in active}
+            if job_type == "training" and "training" in active_types:
+                raise ValueError("Já existe um treinamento na fila ou em execução.")
+            return connection.execute(
+                """INSERT INTO jobs(job_type,status,step,payload,user_id)
+                   VALUES (%s,'queued',%s,%s,%s)
+                   RETURNING id,job_type,status,step,payload,result,progress,error,
+                             cancel_requested,created_at,started_at,finished_at,updated_at""",
+                (job_type, step, Jsonb(payload), user_id),
+            ).fetchone()
+
+    def list_jobs(self, job_type=None, limit=20):
+        with self._connector() as connection:
+            if job_type:
+                return connection.execute(
+                    """SELECT id,job_type,status,step,payload,result,progress,error,
+                              cancel_requested,created_at,started_at,finished_at,updated_at
+                       FROM jobs WHERE job_type=%s
+                       ORDER BY created_at DESC,id DESC LIMIT %s""",
+                    (job_type, limit),
+                ).fetchall()
+            return connection.execute(
+                """SELECT id,job_type,status,step,payload,result,progress,error,
+                          cancel_requested,created_at,started_at,finished_at,updated_at
+                   FROM jobs ORDER BY created_at DESC,id DESC LIMIT %s""",
+                (limit,),
+            ).fetchall()
+
+    def get_job(self, job_id):
+        with self._connector() as connection:
+            return connection.execute(
+                """SELECT id,job_type,status,step,payload,result,progress,error,
+                          cancel_requested,created_at,started_at,finished_at,updated_at
+                   FROM jobs WHERE id=%s""",
+                (job_id,),
+            ).fetchone()
+
+    def claim_next_job(self):
+        """Reivindica o próximo job queued de forma segura entre workers."""
+        with self._connector() as connection:
+            row = connection.execute(
+                """UPDATE jobs SET status='running', started_at=now(), updated_at=now()
+                   WHERE id = (
+                     SELECT id FROM jobs
+                     WHERE status='queued' AND NOT cancel_requested
+                     ORDER BY created_at,id
+                     FOR UPDATE SKIP LOCKED
+                     LIMIT 1
+                   )
+                   RETURNING id,job_type,status,step,payload,result,progress,error,
+                             cancel_requested,created_at,started_at,finished_at,updated_at""",
+            ).fetchone()
+            return row
+
+    def update_job_progress(self, job_id, step, progress, result=None):
+        with self._connector() as connection:
+            return connection.execute(
+                """UPDATE jobs SET step=%s, progress=%s,
+                       result=COALESCE(%s, result), updated_at=now()
+                   WHERE id=%s AND status='running'
+                   RETURNING id,job_type,status,step,payload,result,progress,error,
+                             cancel_requested,created_at,started_at,finished_at,updated_at""",
+                (step, progress, Jsonb(result) if result is not None else None, job_id),
+            ).fetchone()
+
+    def finish_job(self, job_id, status, result=None, error=None):
+        with self._connector() as connection:
+            return connection.execute(
+                """UPDATE jobs SET status=%s, step=%s, progress=CASE WHEN %s='succeeded' THEN 100 ELSE progress END,
+                       result=COALESCE(%s, result), error=%s,
+                       finished_at=now(), updated_at=now()
+                   WHERE id=%s AND status IN ('running','queued')
+                   RETURNING id,job_type,status,step,payload,result,progress,error,
+                             cancel_requested,created_at,started_at,finished_at,updated_at""",
+                (
+                    status,
+                    "done" if status == "succeeded" else ("failed" if status == "failed" else "cancelled"),
+                    status,
+                    Jsonb(result) if result is not None else None,
+                    error,
+                    job_id,
+                ),
+            ).fetchone()
+
+    def request_job_cancel(self, job_id):
+        """Cancela queued imediatamente; running marca cancel_requested."""
+        with self._connector() as connection:
+            row = connection.execute(
+                """UPDATE jobs SET
+                       status=CASE WHEN status='queued' THEN 'cancelled' ELSE status END,
+                       finished_at=CASE WHEN status='queued' THEN now() ELSE finished_at END,
+                       cancel_requested=true,
+                       step=CASE WHEN status='queued' THEN 'cancelled' ELSE step END,
+                       updated_at=now()
+                   WHERE id=%s AND status IN ('queued','running')
+                   RETURNING id,job_type,status,step,payload,result,progress,error,
+                             cancel_requested,created_at,started_at,finished_at,updated_at""",
+                (job_id,),
+            ).fetchone()
+            return row
+
+    def requeue_interrupted_jobs(self):
+        """Reenfileira jobs running órfãos após reinício do worker.
+
+        Executado uma vez no start, sob lock consultivo, para que um job
+        interrompido por crash/reinício não fique preso em running.
+        """
+        with self._connector() as connection:
+            connection.execute("SELECT pg_advisory_xact_lock(741212)")
+            return connection.execute(
+                """UPDATE jobs SET status='queued', step='queued', progress=0,
+                       started_at=NULL, error=NULL, updated_at=now()
+                   WHERE status='running'
+                   RETURNING id""",
+            ).fetchall()
+
+    # --- Usuários e sessões ---
+
+    def create_user(self, email, password_hash):
+        with self._connector() as connection:
+            existing = connection.execute(
+                "SELECT id FROM users WHERE email=%s", (email,)
+            ).fetchone()
+            if existing:
+                raise ValueError("E-mail já cadastrado.")
+            return connection.execute(
+                """INSERT INTO users(email,password_hash) VALUES (%s,%s)
+                   RETURNING id,email,created_at""",
+                (email, password_hash),
+            ).fetchone()
+
+    def get_user_by_email(self, email):
+        with self._connector() as connection:
+            return connection.execute(
+                "SELECT id,email,password_hash,created_at FROM users WHERE email=%s",
+                (email,),
+            ).fetchone()
+
+    def get_user(self, user_id):
+        with self._connector() as connection:
+            return connection.execute(
+                "SELECT id,email,created_at FROM users WHERE id=%s", (user_id,)
+            ).fetchone()
+
+    def create_session(self, token_hash, user_id, expires_at):
+        with self._connector() as connection:
+            connection.execute(
+                """INSERT INTO user_sessions(token_hash,user_id,expires_at)
+                   VALUES (%s,%s,%s)""",
+                (token_hash, user_id, expires_at),
+            )
+            return {"token_hash": token_hash, "user_id": user_id, "expires_at": expires_at}
+
+    def get_session_user(self, token_hash):
+        with self._connector() as connection:
+            return connection.execute(
+                """SELECT u.id,u.email,s.expires_at
+                   FROM user_sessions s JOIN users u ON u.id=s.user_id
+                   WHERE s.token_hash=%s AND s.expires_at > now()""",
+                (token_hash,),
+            ).fetchone()
+
+    def delete_session(self, token_hash):
+        with self._connector() as connection:
+            deleted = connection.execute(
+                "DELETE FROM user_sessions WHERE token_hash=%s RETURNING token_hash",
+                (token_hash,),
+            ).fetchone()
+            return bool(deleted)
+
+    def export_user_data(self, user_id):
+        """Exporta dados do usuário sem expor hashes de senha/token."""
+        with self._connector() as connection:
+            user = connection.execute(
+                "SELECT id,email,created_at FROM users WHERE id=%s", (user_id,)
+            ).fetchone()
+            if user is None:
+                raise ValueError("Usuário não encontrado.")
+            portfolios = connection.execute(
+                "SELECT id,name,created_at FROM portfolios WHERE user_id=%s ORDER BY id",
+                (user_id,),
+            ).fetchall()
+            operations = connection.execute(
+                """SELECT po.id,a.ticker,po.operation_type,po.occurred_on,po.quantity,
+                          po.unit_price,po.amount,po.fees,po.taxes,po.currency,po.notes
+                   FROM portfolio_operations po
+                   JOIN portfolios p ON p.id=po.portfolio_id
+                   LEFT JOIN assets a ON a.id=po.asset_id
+                   WHERE p.user_id=%s ORDER BY po.occurred_on,po.id""",
+                (user_id,),
+            ).fetchall()
+            jobs = connection.execute(
+                """SELECT id,job_type,status,step,progress,created_at,finished_at
+                   FROM jobs WHERE user_id=%s ORDER BY created_at""",
+                (user_id,),
+            ).fetchall()
+            return {"user": user, "portfolios": portfolios, "operations": operations, "jobs": jobs}
+
+    def delete_user_data(self, user_id):
+        """Remove dados do usuário e a conta (com cascata em sessões)."""
+        with self._connector() as connection:
+            connection.execute("SELECT pg_advisory_xact_lock(741213)")
+            connection.execute("DELETE FROM jobs WHERE user_id=%s", (user_id,))
+            connection.execute(
+                """DELETE FROM portfolio_operations po USING portfolios p
+                   WHERE po.portfolio_id=p.id AND p.user_id=%s""",
+                (user_id,),
+            )
+            connection.execute("DELETE FROM portfolio_assets pa USING portfolios p WHERE pa.portfolio_id=p.id AND p.user_id=%s", (user_id,))
+            connection.execute("DELETE FROM watchlist_assets wa USING watchlists w WHERE wa.watchlist_id=w.id AND w.user_id=%s", (user_id,))
+            connection.execute("DELETE FROM watchlists WHERE user_id=%s", (user_id,))
+            connection.execute("DELETE FROM portfolios WHERE user_id=%s", (user_id,))
+            deleted = connection.execute(
+                "DELETE FROM users WHERE id=%s RETURNING id", (user_id,)
+            ).fetchone()
+            return bool(deleted)
 
 class MongoRepository:
     def __init__(self, connector=connect_mongo):

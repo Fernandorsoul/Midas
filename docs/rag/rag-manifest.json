@@ -16,14 +16,14 @@
     {
       "id": "market-data",
       "path": "02-market-data.md",
-      "keywords": ["cotação", "preço", "ticker", "yahoo", "brapi", "importação", "fonte", "histórico"],
-      "code_roots": ["midas_core/infrastructure", "midas_core/application/market_import.py", "midas_core/application/market_import_yahoo.py"]
+      "keywords": ["cotação", "preço", "ticker", "yahoo", "brapi", "importação", "fonte", "histórico", "qualidade", "proveniência", "stale"],
+      "code_roots": ["midas_core/domain/market_quality.py", "midas_core/application/market_quality.py", "midas_core/infrastructure", "midas_core/application/market_import.py", "midas_core/application/market_import_yahoo.py"]
     },
     {
       "id": "portfolio",
       "path": "03-portfolio.md",
-      "keywords": ["carteira", "posição", "compra", "venda", "preço médio", "dividendo", "JCP", "P&L", "provento", "operação", "livro", "custo", "realizado"],
-      "code_roots": ["midas_core/domain/portfolio.py", "midas_core/application/portfolio_ledger.py", "midas_core/interfaces/http.py", "midas_core/application/analysis.py", "web/OperationsLedger.js", "web/app.js"]
+      "keywords": ["carteira", "posição", "compra", "venda", "preço médio", "dividendo", "JCP", "P&L", "provento", "operação", "livro", "custo", "realizado", "patrimônio", "TWR", "XIRR", "benchmark"],
+      "code_roots": ["midas_core/domain/portfolio.py", "midas_core/domain/wealth.py", "midas_core/application/portfolio_ledger.py", "midas_core/application/wealth_dashboard.py", "midas_core/interfaces/http.py", "midas_core/application/analysis.py", "web/OperationsLedger.js", "web/WealthDashboard.js", "web/app.js"]
     },
     {
       "id": "quant-research",
@@ -40,8 +40,8 @@
     {
       "id": "api-jobs",
       "path": "06-api-jobs.md",
-      "keywords": ["API", "endpoint", "rota", "HTTP", "JSON", "job", "fila", "erro", "status"],
-      "code_roots": ["midas_core/interfaces/http.py", "web/api.js"]
+      "keywords": ["API", "endpoint", "rota", "HTTP", "JSON", "job", "fila", "erro", "status", "worker", "treinamento", "importação"],
+      "code_roots": ["midas_core/interfaces/http.py", "midas_core/application/jobs.py", "midas_core/domain/jobs.py", "midas_core/worker.py", "web/api.js"]
     },
     {
       "id": "storage-security",
@@ -59,7 +59,7 @@
       "id": "quality",
       "path": "09-quality.md",
       "keywords": ["teste", "bug", "qualidade", "aceite", "regressão", "monitoramento"],
-      "code_roots": ["test_analysis.py", "test_http.py", "test_market_api.py", "test_midas.py", "test_portfolio.py", "test_portfolio_ledger.py"]
+      "code_roots": ["test_analysis.py", "test_http.py", "test_market_api.py", "test_midas.py", "test_portfolio.py", "test_portfolio_ledger.py", "test_jobs.py", "test_market_quality.py", "test_wealth.py", "test_model_artifacts.py"]
     },
     {
       "id": "codebase-catalog",

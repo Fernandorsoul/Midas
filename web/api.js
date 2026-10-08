@@ -19,6 +19,12 @@ export const addToPortfolio = (ticker, quantity) => request('/api/portfolio/add'
   body: JSON.stringify({ ticker, quantity }),
 });
 
+export const startTraining = horizon => request('/api/training', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ horizon }),
+});
+
 export const removeFromPortfolio = ticker => request('/api/portfolio/remove', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
@@ -27,6 +33,30 @@ export const removeFromPortfolio = ticker => request('/api/portfolio/remove', {
 
 export const getPortfolioDividends = () => request('/api/portfolio/dividends');
 
+export const getJob = jobId => request(`/api/jobs?job_id=${jobId}`);
+
+export const listJobs = (type, limit = 10) => request(
+  `/api/jobs?limit=${limit}${type ? `&type=${encodeURIComponent(type)}` : ''}`
+);
+
+export const cancelJob = jobId => request('/api/jobs/cancel', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ id: jobId }),
+});
+
+export const retryJob = jobId => request('/api/jobs/retry', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ id: jobId }),
+});
+
+export const createJob = payload => request('/api/jobs', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(payload),
+});
+
 export const getPortfolioOperations = ticker => request(
   `/api/portfolio/operations${ticker ? `?ticker=${encodeURIComponent(ticker)}` : ''}`
 );
@@ -34,6 +64,8 @@ export const getPortfolioOperations = ticker => request(
 export const getPortfolioPositions = ticker => request(
   `/api/portfolio/positions${ticker ? `?ticker=${encodeURIComponent(ticker)}` : ''}`
 );
+
+export const getWealthDashboard = () => request('/api/wealth/dashboard');
 
 export const createPortfolioOperation = payload => request('/api/portfolio/operations', {
   method: 'POST',
@@ -57,12 +89,6 @@ export const saveFavorite = (assetId, saved) => request('/api/favorites', {
   method: 'PUT',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({ asset_id: assetId, saved }),
-});
-
-export const startTraining = horizon => request('/api/training', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ horizon }),
 });
 
 export const getTrainingStatus = () => request('/api/training/status');

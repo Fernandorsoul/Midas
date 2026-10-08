@@ -3,6 +3,13 @@ from datetime import datetime, timezone
 import uuid
 
 from midas_core.domain.features import SUPPORTED_HORIZONS
+from midas_core.domain.model_artifacts import (
+    ARTIFACT_SCHEMA_VERSION,
+    serialize_ensemble,
+    serialize_model,
+    validate_artifact,
+)
+from midas_core.domain.regression import EnsembleRidgeModel
 from midas_core.infrastructure.repositories import MongoRepository, PostgresRepository
 from midas_core.training import VariableTrainer
 
@@ -28,24 +35,40 @@ def train(
     result = variable_trainer.train(rows)
     run_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc)
+
+    # Serialização é requisito de publicação: falha impede o run.
+    if isinstance(result.model, EnsembleRidgeModel):
+        model_payload = serialize_ensemble(result.model.members)
+    else:
+        model_payload = serialize_model(result.model, algorithm=result.parameters.get("algorithm"))
+    validate_artifact(model_payload)
+
+    parameters = dict(result.parameters)
+    parameters["horizon_months"] = horizon
+    parameters["artifact_schema_version"] = ARTIFACT_SCHEMA_VERSION
+
     artifact = {
         "_id": run_id,
         "dataset_id": dataset_id,
         "created_at": now,
-        "parameters": result.parameters,
-        "mean": result.model.mean.tolist(),
-        "scale": result.model.scale.tolist(),
-        "weights": result.model.weights.tolist(),
+        "parameters": parameters,
+        "schema_version": ARTIFACT_SCHEMA_VERSION,
+        "model": model_payload,
+        # Campos legados para consumidores antigos (somente ridge)
+        **{k: model_payload[k] for k in ("mean", "scale", "weights") if k in model_payload},
     }
-    mongo_repository.save_artifact(artifact)
+    try:
+        mongo_repository.save_artifact(artifact)
+    except Exception as error:
+        raise ValueError("Falha ao serializar/persistir o artefato do modelo.") from error
     try:
         postgres_repository.save_model_run({
             "id": run_id,
             "dataset_id": dataset_id,
-            "algorithm": result.parameters.get("algorithm", "temporal-model-selection-v3"),
+            "algorithm": parameters.get("algorithm", "ridge"),
             "horizon": horizon,
             "metrics": result.metrics,
-            "parameters": result.parameters,
+            "parameters": parameters,
         })
     except Exception:
         mongo_repository.delete_artifact(run_id)

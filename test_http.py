@@ -5,7 +5,8 @@ from http.server import HTTPServer
 from threading import Thread
 from unittest.mock import patch
 
-from midas_core.interfaces.http import RequestHandler, TRAINING_JOB, TRAINING_LOCK
+from midas_core.domain.auth import AuthError
+from midas_core.interfaces.http import RequestHandler
 
 
 class HTTPTestBase(unittest.TestCase):
@@ -19,6 +20,15 @@ class HTTPTestBase(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.server.shutdown()
+
+    def setUp(self):
+        # Isola autenticação: a maioria dos testes de contrato não exercita login.
+        patcher = patch(
+            "midas_core.interfaces.http.current_user_from_header",
+            return_value={"id": 1, "email": "test@example.com"},
+        )
+        self.auth = patcher.start()
+        self.addCleanup(patcher.stop)
 
     def request(self, method, path, body=None, headers=None):
         import http.client
@@ -35,11 +45,20 @@ class HTTPTestBase(unittest.TestCase):
 
 
 class TrainingStatusTests(HTTPTestBase):
-    def test_returns_idle_status(self):
+    @patch("midas_core.interfaces.http.latest_job")
+    def test_returns_idle_status(self, mock_latest):
+        mock_latest.return_value = {"job": None}
         status, body = self.request("GET", "/api/training/status")
         self.assertEqual(status, 200)
-        self.assertIn("status", body)
-        self.assertIn("message", body)
+        self.assertEqual(body["status"], "idle")
+
+    @patch("midas_core.interfaces.http.latest_job")
+    def test_returns_persisted_training_job(self, mock_latest):
+        mock_latest.return_value = {"job": {"id": 1, "status": "running", "step": "dataset", "message": "ok"}}
+        status, body = self.request("GET", "/api/training/status")
+        self.assertEqual(status, 200)
+        self.assertEqual(body["status"], "running")
+        self.assertEqual(body["id"], 1)
 
 
 class AnalysisEndpointTests(HTTPTestBase):
@@ -79,31 +98,35 @@ class AnalysisEndpointTests(HTTPTestBase):
 
 
 class TrainingEndpointTests(HTTPTestBase):
-    def setUp(self):
-        with TRAINING_LOCK:
-            TRAINING_JOB.clear()
-            TRAINING_JOB.update({"status": "idle", "message": "Nenhum treinamento em execução."})
-
     @patch("midas_core.interfaces.http.PostgresRepository")
-    @patch("midas_core.interfaces.http._run_training_job")
-    def test_starts_training_and_returns_202(self, mock_job, mock_repository):
+    @patch("midas_core.interfaces.http.enqueue_job")
+    def test_starts_training_and_returns_202(self, mock_enqueue, mock_repository):
         mock_repository.return_value.portfolio_tickers.return_value = []
+        mock_enqueue.return_value = {
+            "job": {"id": 1, "status": "queued", "step": "queued", "horizon": 12, "message": "Job enfileirado."},
+            "message": "Job enfileirado.",
+        }
         status, body = self.request("POST", "/api/training", {"horizon": 12})
         self.assertEqual(status, 202)
+        self.assertEqual(body["status"], "queued")
         self.assertEqual(body["horizon"], 12)
 
-    def test_returns_400_for_invalid_horizon(self):
+    @patch("midas_core.interfaces.http.enqueue_job")
+    def test_returns_400_for_invalid_horizon(self, mock_enqueue):
+        mock_enqueue.side_effect = ValueError("Horizonte inválido.")
         status, body = self.request("POST", "/api/training", {"horizon": 99})
         self.assertEqual(status, 400)
         self.assertIn("error", body)
 
-    def test_returns_400_for_string_horizon(self):
+    @patch("midas_core.interfaces.http.enqueue_job")
+    def test_returns_400_for_string_horizon(self, mock_enqueue):
+        mock_enqueue.side_effect = ValueError("Horizonte inválido.")
         status, body = self.request("POST", "/api/training", {"horizon": "twelve"})
         self.assertEqual(status, 400)
 
-    def test_returns_409_when_already_running(self):
-        with TRAINING_LOCK:
-            TRAINING_JOB.update({"status": "running"})
+    @patch("midas_core.interfaces.http.enqueue_job")
+    def test_returns_409_when_already_running(self, mock_enqueue):
+        mock_enqueue.side_effect = ValueError("Já existe um treinamento na fila ou em execução.")
         status, body = self.request("POST", "/api/training", {"horizon": 12})
         self.assertEqual(status, 409)
 
@@ -140,28 +163,27 @@ class PortfolioEndpointTests(HTTPTestBase):
         self.assertEqual(body["tickers"], ["PETR4", "VALE3"])
         self.assertEqual(body["portfolio"], {"PETR4": 3.0, "VALE3": 1.5})
 
-    @patch("midas_core.interfaces.http.PostgresRepository")
-    @patch("midas_core.infrastructure.yahoo.fetch_history")
-    def test_add_imports_and_persists_position(self, mock_history, mock_repository):
-        repository = mock_repository.return_value
-        mock_history.return_value = {"ticker": "PETR4"}
-        repository.save_stocks.return_value = 42
-        repository.set_portfolio_asset.return_value = [{"ticker": "PETR4", "quantity": 10}]
+    @patch("midas_core.interfaces.http.enqueue_job")
+    def test_add_enqueues_import_job(self, mock_enqueue):
+        mock_enqueue.return_value = {
+            "job": {"id": 7, "job_type": "import", "status": "queued", "ticker": "PETR4", "message": "Job enfileirado."},
+            "message": "Job enfileirado.",
+        }
         status, body = self.request("POST", "/api/portfolio/add", {"ticker": "petr4", "quantity": 10})
-        self.assertEqual(status, 200)
-        repository.set_portfolio_asset.assert_called_once_with("PETR4", 10)
-        self.assertEqual(body["portfolio"], {"PETR4": 10.0})
-        self.assertEqual(body["import"], {"ticker": "PETR4", "prices": 42, "status": "imported"})
+        self.assertEqual(status, 202)
+        self.assertEqual(body["job"]["job_type"], "import")
+        mock_enqueue.assert_called_once()
+        args, kwargs = mock_enqueue.call_args
+        self.assertEqual(args[0], "import")
+        self.assertEqual(args[1]["ticker"], "PETR4")
+        self.assertEqual(args[1]["quantity"], 10)
 
-    @patch("midas_core.interfaces.http.PostgresRepository")
-    @patch("midas_core.infrastructure.yahoo.fetch_history")
-    def test_add_returns_502_and_does_not_persist_when_import_fails(self, mock_history, mock_repository):
-        from midas_core.infrastructure.yahoo import YahooFinanceError
-        mock_history.side_effect = YahooFinanceError("indisponível")
+    @patch("midas_core.interfaces.http.enqueue_job")
+    def test_add_returns_400_on_invalid_ticker(self, mock_enqueue):
+        mock_enqueue.side_effect = ValueError("Ticker inválido.")
         status, body = self.request("POST", "/api/portfolio/add", {"ticker": "PETR4", "quantity": 10})
-        self.assertEqual(status, 502)
-        self.assertIn("Yahoo Finance", body["error"])
-        mock_repository.return_value.set_portfolio_asset.assert_not_called()
+        self.assertEqual(status, 400)
+        self.assertIn("error", body)
 
     @patch("midas_core.interfaces.http.PostgresRepository")
     def test_removes_persisted_position(self, mock_repository):
@@ -284,6 +306,86 @@ class PortfolioOperationsEndpointTests(HTTPTestBase):
         response = conn.getresponse()
         self.assertEqual(response.status, 403)
         conn.close()
+
+
+class AuthEndpointTests(HTTPTestBase):
+    def test_register_returns_201_without_password_echo(self):
+        with patch("midas_core.interfaces.http.register_user") as mock_register:
+            mock_register.return_value = {"user": {"id": 1, "email": "a@b.com"}}
+            status, body = self.request("POST", "/api/auth/register", {"email": "a@b.com", "password": "senha-forte-123"})
+            self.assertEqual(status, 201)
+            self.assertEqual(body["user"]["email"], "a@b.com")
+            self.assertNotIn("password", body)
+
+    def test_login_returns_token(self):
+        with patch("midas_core.interfaces.http.login_user") as mock_login:
+            mock_login.return_value = {"token": "abc", "user": {"id": 1, "email": "a@b.com"}}
+            status, body = self.request("POST", "/api/auth/login", {"email": "a@b.com", "password": "senha-forte-123"})
+            self.assertEqual(status, 200)
+            self.assertEqual(body["token"], "abc")
+
+    def test_login_invalid_credentials_401(self):
+        with patch("midas_core.interfaces.http.login_user", side_effect=AuthError("Credenciais inválidas.")):
+            status, body = self.request("POST", "/api/auth/login", {"email": "a@b.com", "password": "x"})
+            self.assertEqual(status, 401)
+
+    def test_me_requires_auth(self):
+        self.auth.return_value = None
+        # Simula 401: current_user_from_header levanta AuthError
+        with patch("midas_core.interfaces.http.current_user_from_header", side_effect=AuthError("Autenticação necessária.")):
+            status, body = self.request("GET", "/api/auth/me")
+            self.assertEqual(status, 401)
+
+    def test_operations_reject_unauthenticated(self):
+        with patch("midas_core.interfaces.http.current_user_from_header", side_effect=AuthError("Autenticação necessária.")):
+            status, body = self.request("POST", "/api/portfolio/operations", {
+                "ticker": "PETR4", "operation_type": "buy", "occurred_on": "2025-01-01", "quantity": 1, "unit_price": 10,
+            })
+            self.assertEqual(status, 401)
+            self.assertIn("Autenticação", body["error"])
+
+
+class JobsEndpointTests(HTTPTestBase):
+    @patch("midas_core.interfaces.http.list_jobs")
+    def test_lists_jobs(self, mock_list):
+        mock_list.return_value = {"jobs": [{"id": 1, "job_type": "training", "status": "queued"}]}
+        status, body = self.request("GET", "/api/jobs")
+        self.assertEqual(status, 200)
+        self.assertEqual(body["jobs"][0]["id"], 1)
+
+    @patch("midas_core.interfaces.http.get_job")
+    def test_gets_job_by_id(self, mock_get):
+        mock_get.return_value = {"job": {"id": 2, "job_type": "import", "status": "running"}}
+        status, body = self.request("GET", "/api/jobs?job_id=2")
+        self.assertEqual(status, 200)
+        self.assertEqual(body["job"]["status"], "running")
+
+    @patch("midas_core.interfaces.http.enqueue_job")
+    def test_creates_import_job(self, mock_enqueue):
+        mock_enqueue.return_value = {"job": {"id": 3, "job_type": "import"}, "message": "ok"}
+        status, body = self.request("POST", "/api/jobs", {
+            "type": "import",
+            "payload": {"ticker": "PETR4", "quantity": 10},
+        })
+        self.assertEqual(status, 202)
+        self.assertEqual(body["job"]["job_type"], "import")
+
+    @patch("midas_core.interfaces.http.cancel_job")
+    def test_cancels_job(self, mock_cancel):
+        mock_cancel.return_value = {"job": {"id": 4, "status": "cancelled"}, "message": "ok"}
+        status, body = self.request("POST", "/api/jobs/cancel", {"id": 4})
+        self.assertEqual(status, 200)
+        self.assertEqual(body["job"]["status"], "cancelled")
+
+    @patch("midas_core.interfaces.http.retry_job")
+    def test_retries_job(self, mock_retry):
+        mock_retry.return_value = {"job": {"id": 5, "status": "queued"}, "message": "ok"}
+        status, body = self.request("POST", "/api/jobs/retry", {"id": 5})
+        self.assertEqual(status, 202)
+
+    def test_cancel_requires_integer_id(self):
+        status, body = self.request("POST", "/api/jobs/cancel", {"id": "x"})
+        self.assertEqual(status, 400)
 
 
 class FavoritesEndpointTests(HTTPTestBase):

@@ -87,6 +87,54 @@ CREATE INDEX idx_portfolio_operations_portfolio
     ON portfolio_operations (portfolio_id, occurred_on, id);
 CREATE INDEX idx_portfolio_operations_asset
     ON portfolio_operations (asset_id, occurred_on, id);
+CREATE TABLE jobs (
+    id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    job_type text NOT NULL CHECK (job_type IN ('training', 'import')),
+    status text NOT NULL DEFAULT 'queued' CHECK (status IN (
+        'queued', 'running', 'succeeded', 'failed', 'cancelled'
+    )),
+    step text NOT NULL DEFAULT 'queued',
+    payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+    result jsonb NOT NULL DEFAULT '{}'::jsonb,
+    progress numeric(5,2) NOT NULL DEFAULT 0 CHECK (progress >= 0 AND progress <= 100),
+    error text,
+    cancel_requested boolean NOT NULL DEFAULT false,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    started_at timestamptz,
+    finished_at timestamptz,
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    user_id bigint,
+    CONSTRAINT job_running_has_started CHECK (
+        (status = 'running' AND started_at IS NOT NULL) OR status <> 'running'
+    ),
+    CONSTRAINT job_finished_has_timestamp CHECK (
+        (status IN ('succeeded', 'failed', 'cancelled') AND finished_at IS NOT NULL)
+        OR status NOT IN ('succeeded', 'failed', 'cancelled')
+    )
+);
+CREATE UNIQUE INDEX jobs_single_training
+    ON jobs (job_type)
+    WHERE job_type = 'training' AND status IN ('queued', 'running');
+CREATE INDEX jobs_status_created ON jobs (status, created_at, id);
+CREATE INDEX jobs_type_status ON jobs (job_type, status, created_at DESC);
+CREATE TABLE users (
+    id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    email text NOT NULL UNIQUE,
+    password_hash text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE user_sessions (
+    token_hash text PRIMARY KEY,
+    user_id bigint NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    expires_at timestamptz NOT NULL
+);
+CREATE INDEX idx_user_sessions_user ON user_sessions (user_id);
+ALTER TABLE portfolios ADD COLUMN user_id bigint REFERENCES users(id);
+ALTER TABLE jobs ADD COLUMN user_id bigint REFERENCES users(id);
+ALTER TABLE watchlists ADD COLUMN user_id bigint REFERENCES users(id);
+CREATE INDEX idx_portfolios_user ON portfolios (user_id);
+CREATE INDEX idx_jobs_user ON jobs (user_id);
 COMMENT ON COLUMN model_runs.dataset_id IS 'ID lógico do snapshot em midas_training.datasets; referência entre bancos validada pela aplicação.';
 GRANT CONNECT ON DATABASE midas TO midas_app;
 GRANT USAGE ON SCHEMA public TO midas_app;

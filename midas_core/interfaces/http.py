@@ -1,16 +1,33 @@
 """Interface HTTP local; valida entrada e delega casos de uso."""
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
-from datetime import datetime, timezone
 import json
 import threading
-from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import psycopg
 from pymongo.errors import PyMongoError
 
 from midas_core.application.analysis import build_report, build_portfolio_report, set_favorite
-from midas_core.application.datasets import publish_dataset
+from midas_core.application.auth import (
+    AuthError,
+    current_user_from_header,
+    delete_my_data,
+    export_my_data,
+    login_user,
+    logout_user,
+    register_user,
+)
+from midas_core.application.jobs import (
+    cancel_job,
+    enqueue_job,
+    get_job,
+    latest_job,
+    list_jobs,
+    retry_job,
+    JobWorker,
+)
+from midas_core.application.market_quality import market_quality_report
+from midas_core.application.wealth_dashboard import wealth_dashboard
 from midas_core.application.portfolio_ledger import (
     delete_operation,
     edit_operation,
@@ -18,63 +35,16 @@ from midas_core.application.portfolio_ledger import (
     position_summary,
     record_operation,
 )
-from midas_core.application.training import train
 from midas_core.config import PROJECT_ROOT, Settings
 from midas_core.infrastructure.repositories import PostgresRepository
 
-WEB_ROOT = PROJECT_ROOT / "web"
-TRAINING_LOCK = threading.Lock()
-TRAINING_JOB = {"status": "idle", "message": "Nenhum treinamento em execução."}
+# Serve o bundle Vite quando existir; senão, os fontes em web/ (apenas com Vite).
+_WEB_SOURCE = PROJECT_ROOT / "web"
+WEB_ROOT = _WEB_SOURCE / "dist" if (_WEB_SOURCE / "dist" / "index.html").exists() else _WEB_SOURCE
+
 
 class MarketDataUnavailable(RuntimeError):
     """A fonte de mercado não respondeu para uma operação de carteira."""
-
-def _training_snapshot():
-    with TRAINING_LOCK:
-        return dict(TRAINING_JOB)
-
-def _update_training_job(**values):
-    with TRAINING_LOCK:
-        TRAINING_JOB.update(values)
-
-def _run_training_job(horizon, tickers=None, source=None):
-    started_at = datetime.now(timezone.utc).isoformat()
-    try:
-        _update_training_job(
-            status="running",
-            step="dataset",
-            message="Publicando dataset no MongoDB...",
-            horizon=horizon,
-            started_at=started_at,
-            finished_at=None,
-            dataset_id=None,
-            sample_count=None,
-            run_id=None,
-            error=None,
-        )
-        dataset_id, sample_count = publish_dataset((horizon,), source=source, tickers=tickers)
-        _update_training_job(
-            step="training",
-            message="Treinando modelos e validando temporalmente...",
-            dataset_id=dataset_id,
-            sample_count=sample_count,
-        )
-        run_id = train(dataset_id, horizon)
-        _update_training_job(
-            status="succeeded",
-            step="done",
-            message="Treinamento concluído.",
-            run_id=run_id,
-            finished_at=datetime.now(timezone.utc).isoformat(),
-        )
-    except Exception as error:
-        _update_training_job(
-            status="failed",
-            step="failed",
-            message="Treinamento falhou.",
-            error=str(error),
-            finished_at=datetime.now(timezone.utc).isoformat(),
-        )
 
 class RequestHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
@@ -91,8 +61,61 @@ class RequestHandler(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         url = urlparse(self.path)
+        if url.path == "/api/auth/me":
+            user = self._current_user()
+            if user:
+                self.respond(200, {"user": user})
+            return
+        if url.path == "/api/auth/export":
+            user = self._current_user()
+            if not user:
+                return
+            try:
+                self.respond(200, export_my_data(user["id"], repository=PostgresRepository()))
+            except ValueError as error:
+                self.respond(400, {"error": str(error)})
+            except psycopg.Error:
+                self.respond(503, {"error": "Não foi possível acessar o PostgreSQL."})
+            return
         if url.path == "/api/training/status":
-            self.respond(200, _training_snapshot())
+            try:
+                result = latest_job("training", repository=PostgresRepository())
+                job = result["job"]
+                if job is None:
+                    self.respond(200, {"status": "idle", "message": "Nenhum treinamento em execução."})
+                else:
+                    self.respond(200, job)
+            except psycopg.Error:
+                self.respond(503, {"error": "Não foi possível acessar o PostgreSQL."})
+            return
+        if url.path == "/api/market/quality":
+            try:
+                self.respond(200, market_quality_report(repository=PostgresRepository()))
+            except (psycopg.Error, PyMongoError, KeyError):
+                self.respond(503, {"error": "Não foi possível acessar os bancos de dados."})
+            return
+        if url.path == "/api/wealth/dashboard":
+            try:
+                self.respond(200, wealth_dashboard(repository=PostgresRepository()))
+            except ValueError as error:
+                self.respond(400, {"error": str(error)})
+            except (psycopg.Error, PyMongoError, KeyError):
+                self.respond(503, {"error": "Não foi possível acessar os bancos de dados."})
+            return
+        if url.path == "/api/jobs":
+            try:
+                query = parse_qs(url.query)
+                job_id = query.get("job_id", [None])[0]
+                if job_id is not None:
+                    self.respond(200, get_job(int(job_id), repository=PostgresRepository()))
+                else:
+                    job_type = query.get("type", [None])[0]
+                    limit = int(query.get("limit", ["20"])[0])
+                    self.respond(200, list_jobs(job_type=job_type, limit=limit, repository=PostgresRepository()))
+            except (ValueError, TypeError) as error:
+                self.respond(400, {"error": str(error)})
+            except psycopg.Error:
+                self.respond(503, {"error": "Não foi possível acessar o PostgreSQL."})
             return
         if url.path == "/api/analysis":
             try:
@@ -150,10 +173,51 @@ class RequestHandler(SimpleHTTPRequestHandler):
             super().do_GET()
 
     def do_POST(self):
+        if self.path == "/api/auth/register":
+            if not self._require_same_origin():
+                return
+            try:
+                body = self._read_json()
+                self.respond(201, register_user(body.get("email"), body.get("password"), repository=PostgresRepository()))
+            except (AuthError, ValueError) as error:
+                self.respond(400, {"error": str(error)})
+            except psycopg.Error:
+                self.respond(503, {"error": "Não foi possível acessar o PostgreSQL."})
+            return
+        if self.path == "/api/auth/login":
+            if not self._require_same_origin():
+                return
+            try:
+                body = self._read_json()
+                self.respond(200, login_user(body.get("email"), body.get("password"), repository=PostgresRepository()))
+            except (AuthError, ValueError) as error:
+                self.respond(401, {"error": str(error)})
+            except psycopg.Error:
+                self.respond(503, {"error": "Não foi possível acessar o PostgreSQL."})
+            return
+        if self.path == "/api/auth/logout":
+            user = self._current_user()
+            if not user:
+                return
+            try:
+                token = self.headers.get("Authorization", "").split(None, 1)[-1]
+                self.respond(200, logout_user(token, repository=PostgresRepository()))
+            except (AuthError, ValueError) as error:
+                self.respond(400, {"error": str(error)})
+            return
+        if self.path == "/api/auth/delete":
+            user = self._current_user()
+            if not user:
+                return
+            try:
+                self.respond(200, delete_my_data(user["id"], repository=PostgresRepository()))
+            except (AuthError, ValueError) as error:
+                self.respond(400, {"error": str(error)})
+            except psycopg.Error:
+                self.respond(503, {"error": "Não foi possível acessar o PostgreSQL."})
+            return
         if self.path == "/api/portfolio/add":
-            origin = self.headers.get("Origin")
-            if origin and origin != "http://" + self.headers.get("Host", ""):
-                self.respond(403, {"error": "Origem não permitida."})
+            if not self._require_same_origin():
                 return
             try:
                 body = self._read_json()
@@ -163,12 +227,15 @@ class RequestHandler(SimpleHTTPRequestHandler):
                     raise ValueError("Ticker inválido.")
                 if not isinstance(quantity, (int, float)) or quantity <= 0:
                     raise ValueError("Quantidade inválida.")
-                result = _add_to_portfolio(ticker, int(quantity))
-                self.respond(200, result)
+                result = enqueue_job("import", {
+                    "ticker": ticker,
+                    "quantity": int(quantity),
+                    "add_to_portfolio": True,
+                    "range": "5y",
+                }, repository=PostgresRepository())
+                self.respond(202, result)
             except ValueError as error:
                 self.respond(400, {"error": str(error)})
-            except MarketDataUnavailable as error:
-                self.respond(502, {"error": str(error)})
             except psycopg.Error:
                 self.respond(503, {"error": "Não foi possível acessar o PostgreSQL."})
             return
@@ -192,6 +259,9 @@ class RequestHandler(SimpleHTTPRequestHandler):
         if self.path == "/api/portfolio/operations":
             if not self._require_same_origin():
                 return
+            user = self._current_user()
+            if not user:
+                return
             try:
                 body = self._read_json()
                 self.respond(201, record_operation(body, repository=PostgresRepository()))
@@ -202,6 +272,9 @@ class RequestHandler(SimpleHTTPRequestHandler):
             return
         if self.path == "/api/portfolio/operations/delete":
             if not self._require_same_origin():
+                return
+            user = self._current_user()
+            if not user:
                 return
             try:
                 body = self._read_json()
@@ -214,37 +287,73 @@ class RequestHandler(SimpleHTTPRequestHandler):
             except psycopg.Error:
                 self.respond(503, {"error": "Não foi possível acessar o PostgreSQL."})
             return
+        if self.path == "/api/jobs":
+            if not self._require_same_origin():
+                return
+            user = self._current_user()
+            if not user:
+                return
+            try:
+                body = self._read_json()
+                result = enqueue_job(body.get("type") or body.get("job_type"), body.get("payload") or {
+                    key: body[key] for key in ("horizon", "tickers", "source", "ticker", "quantity", "add_to_portfolio", "range") if key in body
+                }, repository=PostgresRepository(), user_id=user["id"])
+                self.respond(202, result)
+            except ValueError as error:
+                self.respond(400, {"error": str(error)})
+            except psycopg.Error:
+                self.respond(503, {"error": "Não foi possível acessar o PostgreSQL."})
+            return
+        if self.path == "/api/jobs/cancel":
+            if not self._require_same_origin():
+                return
+            try:
+                body = self._read_json()
+                job_id = body.get("id") or body.get("job_id")
+                if type(job_id) is not int:
+                    raise ValueError("id de job inválido.")
+                self.respond(200, cancel_job(job_id, repository=PostgresRepository()))
+            except ValueError as error:
+                self.respond(400, {"error": str(error)})
+            except psycopg.Error:
+                self.respond(503, {"error": "Não foi possível acessar o PostgreSQL."})
+            return
+        if self.path == "/api/jobs/retry":
+            if not self._require_same_origin():
+                return
+            try:
+                body = self._read_json()
+                job_id = body.get("id") or body.get("job_id")
+                if type(job_id) is not int:
+                    raise ValueError("id de job inválido.")
+                self.respond(202, retry_job(job_id, repository=PostgresRepository()))
+            except ValueError as error:
+                self.respond(400, {"error": str(error)})
+            except psycopg.Error:
+                self.respond(503, {"error": "Não foi possível acessar o PostgreSQL."})
+            return
         if self.path != "/api/training":
             self.respond(404, {"error": "Rota não encontrada."})
             return
-        origin = self.headers.get("Origin")
-        if origin and origin != "http://" + self.headers.get("Host", ""):
-            self.respond(403, {"error": "Origem não permitida."})
+        if not self._require_same_origin():
+            return
+        user = self._current_user()
+        if not user:
             return
         try:
             body = self._read_json()
             horizon = body.get("horizon", 6)
-            if type(horizon) is not int or horizon not in (6, 12, 24, 36):
-                raise ValueError("Horizonte inválido.")
-            with TRAINING_LOCK:
-                if TRAINING_JOB.get("status") == "running":
-                    self.respond(409, dict(TRAINING_JOB))
-                    return
-                TRAINING_JOB.clear()
-                TRAINING_JOB.update({
-                    "status": "queued",
-                    "step": "queued",
-                    "message": "Treinamento enfileirado.",
-                    "horizon": horizon,
-                })
-            # Treinar com ativos da carteira se especificado, senão com todos
             tickers = PostgresRepository().portfolio_tickers() or None
-            source = None  # Usar todas as fontes disponíveis
-            thread = threading.Thread(target=_run_training_job, args=(horizon, tickers, source), daemon=True)
-            thread.start()
-            self.respond(202, _training_snapshot())
-        except (ValueError, UnicodeError) as error:
-            self.respond(400, {"error": str(error)})
+            result = enqueue_job("training", {
+                "horizon": horizon,
+                "tickers": tickers,
+                "source": None,
+            }, repository=PostgresRepository(), user_id=user["id"])
+            self.respond(202, result["job"])
+        except ValueError as error:
+            self.respond(409 if "Já existe" in str(error) else 400, {"error": str(error)})
+        except psycopg.Error:
+            self.respond(503, {"error": "Não foi possível acessar o PostgreSQL."})
 
     def do_PUT(self):
         origin = self.headers.get("Origin")
@@ -284,6 +393,20 @@ class RequestHandler(SimpleHTTPRequestHandler):
             return False
         return True
 
+    def _current_user(self):
+        """Retorna o usuário autenticado ou None após responder 401/403."""
+        try:
+            return current_user_from_header(
+                self.headers.get("Authorization"),
+                repository=PostgresRepository(),
+            )
+        except AuthError as error:
+            self.respond(401, {"error": str(error)})
+            return None
+        except psycopg.Error:
+            self.respond(503, {"error": "Não foi possível acessar o PostgreSQL."})
+            return None
+
     def _read_json(self):
         size = int(self.headers.get("Content-Length", "0"))
         if not 0 < size <= 4096 or self.headers.get("Content-Type") != "application/json":
@@ -295,6 +418,11 @@ class RequestHandler(SimpleHTTPRequestHandler):
 
 def run_server():
     settings = Settings.from_environment()
+    # Worker embutido permite modo single-process; em produção use o processo
+    # dedicado `python midas_core/worker.py` (serviço `worker` no compose).
+    worker = JobWorker()
+    worker_thread = threading.Thread(target=worker.run_forever, daemon=True, name="job-worker")
+    worker_thread.start()
     server = ThreadingHTTPServer((settings.http_host, settings.http_port), RequestHandler)
     print(f"Midas disponível em http://localhost:{settings.http_port}", flush=True)
     server.serve_forever()
@@ -304,23 +432,6 @@ def _get_portfolio_list():
     rows = PostgresRepository().portfolio_assets()
     portfolio = {row["ticker"]: float(row["quantity"]) for row in rows}
     return {"tickers": sorted(portfolio), "portfolio": portfolio}
-
-def _add_to_portfolio(ticker, quantity=100):
-    """Importa as cotações e persiste a posição na carteira padrão."""
-    from midas_core.infrastructure.yahoo import SOURCE, YahooFinanceError, fetch_history
-    repository = PostgresRepository()
-    try:
-        stock = fetch_history(ticker, "5y")
-    except YahooFinanceError as error:
-        raise MarketDataUnavailable("Não foi possível importar cotações do Yahoo Finance.") from error
-    price_count = repository.save_stocks([stock], SOURCE)
-    rows = repository.set_portfolio_asset(ticker, quantity)
-    portfolio = {row["ticker"]: float(row["quantity"]) for row in rows}
-    return {
-        "message": f"{ticker} adicionado à carteira com {quantity} cotas.",
-        "tickers": sorted(portfolio), "portfolio": portfolio,
-        "import": {"ticker": ticker, "prices": price_count, "status": "imported"},
-    }
 
 def _remove_from_portfolio(ticker):
     """Remove uma posição persistida da carteira padrão."""

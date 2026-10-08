@@ -1,0 +1,89 @@
+name: quality
+
+on:
+  pull_request:
+  push:
+    branches: [dev, master]
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install JS deps
+        run: npm install --ignore-scripts
+
+      - name: JavaScript syntax
+        run: npm run check
+
+      - name: Install Python deps
+        run: pip install -r requirements.txt
+
+      - name: Python tests
+        run: python -m unittest discover -p 'test_*.py' -v
+        env:
+          PYTHONPATH: .
+          # Testes unitários usam mocks; nenhum segredo é necessário.
+
+      - name: Migration dry-run (check pending)
+        run: python scripts/migrate_postgres.py --check
+        env:
+          # O check apenas lê o diretório quando o banco não está disponível;
+          # em CI de PR validamos sintaxe/execução do executor com banco efêmero.
+          POSTGRES_HOST: 127.0.0.1
+          POSTGRES_PASSWORD: ci-not-a-secret
+        continue-on-error: true
+
+  migrations:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_DB: midas
+          POSTGRES_USER: midas_admin
+          POSTGRES_PASSWORD: ci-local-only
+          APP_PASSWORD: ci-local-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U midas_admin -d midas"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install psycopg
+        run: pip install "psycopg[binary]"
+
+      - name: Apply migrations twice (idempotent)
+        env:
+          POSTGRES_HOST: 127.0.0.1
+          POSTGRES_PORT: "5432"
+          POSTGRES_USER: midas_admin
+          POSTGRES_PASSWORD: ci-local-only
+          POSTGRES_DB: midas
+        run: |
+          python scripts/migrate_postgres.py
+          python scripts/migrate_postgres.py
+          python scripts/migrate_postgres.py --status

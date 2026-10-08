@@ -74,6 +74,11 @@ Depois de alterar documentos em `docs/rag/`, executar `python scripts/index_rag.
 5. Preferir resumos de trabalho já obtidos na tarefa a recuperar o mesmo conteúdo novamente.
 6. Confirmar no código somente o fato necessário; não abrir arquivos vizinhos por hábito.
 
+Comando de consulta híbrida (filtro de módulo → texto → vetor → limite 3):
+`python scripts/query_rag.py "consulta" --module portfolio`
+Diagnóstico do índice: `python scripts/query_rag.py --diagnose`
+Modelo de embedding registrado: `local-hash-256` (256 dimensões, determinístico, sem provedor externo).
+
 ## Regras de produto e comunicação
 
 - Midas é uma ferramenta de pesquisa e acompanhamento de investimentos, não uma corretora.

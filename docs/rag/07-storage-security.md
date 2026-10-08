@@ -19,22 +19,34 @@ PostgreSQL, MongoDB, segredos, isolamento de dados e controles de acesso.
 - `model_runs` armazena métricas e parâmetros em JSONB; a ligação com o dataset MongoDB é lógica, não transacional.
 - `portfolios` e `portfolio_assets` persistem a lista de ativos e quantidade; a migração `001-persistent-portfolio.sql` é necessária para bancos já existentes.
 - `portfolio_operations` persiste o livro razão (compra, venda, aporte, retirada, dividendo, JCP, taxa, imposto) com moeda, datas e invariantes de quantidade/valor; migração `002-portfolio-operations.sql`.
+- `jobs` persiste treinamento e importação (tipo, status, etapa, payload, resultado, progresso, erro seguro, cancelamento); migração `003-jobs.sql`. Índice parcial impede dois treinos ativos.
+- `users` e `user_sessions` (migração `004-users.sql`); `user_id` em `portfolios`, `jobs` e `watchlists`. Senha: PBKDF2-HMAC-SHA256; sessão guarda só hash SHA-256 do token.
+- Série de preços por ativo usa uma única fonte, com preferência oficial (`yahoo.finance`, `brapi.dev`) sobre experimental (`enriched`).
 - MongoDB valida as coleções `datasets`, `training_samples` e `model_artifacts`; amostras têm índice único por dataset, ticker, data e horizonte.
 - Ao publicar um dataset, a aplicação tenta compensar uma falha de inserção de amostras removendo dataset e amostras do MongoDB. Não há transação entre MongoDB e PostgreSQL.
 - Favoritos usam lock transacional consultivo PostgreSQL para evitar corrida na criação da watchlist compartilhada.
+
+## Migrações
+
+- Executor versionado: `scripts/migrate_postgres.py` (`--check`, `--status`, `--baseline`).
+- Tabela `schema_migrations` registra filename + checksum SHA-256; migração editada após aplicação falha com diagnóstico (criar nova migração).
+- Falha de migração reverte a transação e **não** pede apagar volume.
+- Comandos: `scripts/check_quality.py` (JS + testes + health) e `scripts/validate_rag.py`.
+- CI: `.github/workflows/ci.yml` (PR e push em dev/master) com testes e migrações idempotentes em Postgres efêmero — sem segredos reais.
 
 ## Conexões
 
 - PostgreSQL operacional: banco `midas`, usuário de aplicação `midas_app`, conexão com timeout de 5 segundos e linhas em formato de dicionário.
 - MongoDB operacional: banco e autenticação `midas_training`, usuário `midas_app`, seleção de servidor com timeout de 5 segundos e datas timezone-aware.
-- RAG: serviço separado `rag-postgres`, banco `midas_rag`, usuário `midas_rag`, porta local padrão 5433. A tabela `rag_chunks` suporta busca textual em português e embeddings sem dimensão fixa; o índice vetorial depende do modelo de embedding escolhido. `scripts/index_rag.py` compara hashes por documento e reindexa somente módulos RAG novos ou alterados.
+- RAG: serviço separado `rag-postgres`, banco `midas_rag`, usuário `midas_rag`, porta local padrão 5433. Modelo de embedding registrado: **`local-hash-256`** (dimensão 256, determinístico, sem provedor externo). Índice vetorial HNSW em `002-embedding-index.sql`. `scripts/index_rag.py` compara hashes e só reindexa/genera embeddings de chunks novos ou alterados.
 
 ## Regras de segurança
 
 - Nunca incluir `.env`, senhas ou tokens em contexto de RAG, logs ou respostas.
 - Segredos devem ser lidos por ambiente e não aparecer em URLs.
-- Não afirmar isolamento entre usuários até implementar `user_id`, autenticação e autorização.
-- Ao criar persistência de carteira, modelar propriedade desde o início.
+- Isolamento por `user_id`: rotas privadas/mutáveis exigem sessão (`Authorization: Bearer`); `assert_owner` nega acesso a recursos de outro usuário.
+- Tokens de sessão nunca são persistidos em claro; senha nunca aparece em respostas/logs.
+- Exportação (`GET /api/auth/export`) e exclusão (`POST /api/auth/delete`) não expõem hashes.
 
 ## Pontos de código
 
@@ -43,6 +55,7 @@ PostgreSQL, MongoDB, segredos, isolamento de dados e controles de acesso.
 - `midas_core/infrastructure/database.py`
 - `midas_core/infrastructure/repositories.py`
 - `infra/postgres/migrations/002-portfolio-operations.sql`
+- `infra/postgres/migrations/003-jobs.sql`
 - `midas_core/config.py`
 - `compose.yaml`
 - `infra/rag-postgres/01-init.sql`

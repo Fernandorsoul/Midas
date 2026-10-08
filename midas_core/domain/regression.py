@@ -9,6 +9,16 @@ class RidgeModel:
     scale: np.ndarray
     weights: np.ndarray
 
+
+@dataclass(frozen=True)
+class EnsembleRidgeModel:
+    """Média de modelos ridge — só é ensemble com 2+ membros."""
+    members: tuple
+
+    def __post_init__(self):
+        if len(self.members) < 2:
+            raise ValueError("Ensemble exige pelo menos dois modelos.")
+
 @dataclass(frozen=True)
 class TemporalPartitions:
     selection_train: list
@@ -53,7 +63,11 @@ def fit(features, targets, alpha=10.0):
 
 def predict(model, features):
     values = np.atleast_2d(features)
-    # Suporte para TreeModel (XGBoost, LightGBM)
+    # Ensemble de lineares: média das previsões
+    if isinstance(model, EnsembleRidgeModel):
+        preds = np.mean([predict(member, values) for member in model.members], axis=0)
+        return np.atleast_1d(preds)
+    # Suporte para TreeModel (XGBoost, LightGBM) — não serializável para produção
     if hasattr(model, 'estimator') and hasattr(model.estimator, 'predict'):
         standardized = (values - model.mean) / model.scale
         return model.estimator.predict(standardized)
@@ -101,8 +115,6 @@ def rank_correlation(rows, actual, estimated):
     return float(np.mean(correlations)) if correlations else 0.0
 
 def from_artifact(artifact):
-    return RidgeModel(
-        np.asarray(artifact["mean"], dtype=float),
-        np.asarray(artifact["scale"], dtype=float),
-        np.asarray(artifact["weights"], dtype=float),
-    )
+    """Rehidrata modelo. Prefira midas_core.domain.model_artifacts.from_artifact."""
+    from midas_core.domain.model_artifacts import from_artifact as _load
+    return _load(artifact)

@@ -84,8 +84,17 @@ class BrapiClient:
                 return payload
             except HTTPError as error:
                 if error.code == 429 and attempt + 1 < self.retries:
-                    time.sleep(2**attempt)
+                    retry_after = error.headers.get("Retry-After") if getattr(error, "headers", None) else None
+                    try:
+                        wait = float(retry_after) if retry_after else float(2 ** attempt)
+                    except (TypeError, ValueError):
+                        wait = float(2 ** attempt)
+                    time.sleep(min(wait, 30.0))
                     continue
+                if error.code == 429:
+                    raise MarketAPIError(
+                        "Limite de requisições da brapi.dev atingido (HTTP 429). Tente novamente mais tarde."
+                    ) from error
                 if error.code in (401, 403):
                     raise MarketAPIError(
                         "A API recusou o acesso. Configure BRAPI_TOKEN para este ativo ou período."
