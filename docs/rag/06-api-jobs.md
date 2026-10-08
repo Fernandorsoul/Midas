@@ -19,6 +19,7 @@ Contratos HTTP locais, validação de entrada, status de tarefas e tratamento de
 | `PUT /api/portfolio/operations` | Edição controlada de operação |
 | `POST /api/portfolio/operations/delete` | Exclui operação revalidando o livro |
 | `GET /api/portfolio/positions` | Posição, custo, P&L e retorno total |
+| `GET /api/market/quality` | Proveniência, frescor e política de fontes |
 | `PUT /api/favorites` | Altera favorito |
 | `POST /api/training` | Enfileira job de treinamento (202) |
 | `GET /api/training/status` | Último job de treino persistido |

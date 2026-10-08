@@ -47,11 +47,14 @@ class PostgresRepository:
                    FROM assets a WHERE NOT a.is_demo ORDER BY a.ticker"""
             ).fetchall()
             for asset in assets:
+                # Fonte da série: oficial (yahoo/brapi) antes de experimental;
+                # dentro da mesma classe, a mais recente. A série nunca mistura fontes.
                 asset["prices"] = connection.execute(
-                    """SELECT price_date,close,adjusted_close,source FROM daily_prices
+                    """SELECT price_date,close,adjusted_close,source,ingested_at FROM daily_prices
                        WHERE asset_id=%s AND source=(
                          SELECT source FROM daily_prices WHERE asset_id=%s
-                         ORDER BY price_date DESC,ingested_at DESC,source LIMIT 1)
+                         ORDER BY CASE WHEN source IN ('yahoo.finance','brapi.dev') THEN 0 ELSE 1 END,
+                                  price_date DESC,ingested_at DESC,source LIMIT 1)
                        ORDER BY price_date DESC LIMIT 1260""",
                     (asset["id"], asset["id"]),
                 ).fetchall()[::-1]
@@ -264,17 +267,18 @@ class PostgresRepository:
         with self._connector() as connection:
             if source:
                 return connection.execute(
-                    """SELECT p.close,p.price_date,p.source
+                    """SELECT p.close,p.adjusted_close,p.price_date,p.source,p.ingested_at
                        FROM daily_prices p JOIN assets a ON a.id=p.asset_id
                        WHERE a.ticker=%s AND p.source=%s
                        ORDER BY p.price_date DESC LIMIT 1""",
                     (ticker, source),
                 ).fetchone()
             return connection.execute(
-                """SELECT p.close,p.price_date,p.source
+                """SELECT p.close,p.adjusted_close,p.price_date,p.source,p.ingested_at
                    FROM daily_prices p JOIN assets a ON a.id=p.asset_id
                    WHERE a.ticker=%s
-                   ORDER BY p.price_date DESC,p.ingested_at DESC LIMIT 1""",
+                   ORDER BY CASE WHEN p.source IN ('yahoo.finance','brapi.dev') THEN 0 ELSE 1 END,
+                            p.price_date DESC,p.ingested_at DESC LIMIT 1""",
                 (ticker,),
             ).fetchone()
 

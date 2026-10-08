@@ -38,7 +38,9 @@ Este catálogo registra todos os arquivos relevantes de código, configuração,
 | `midas_core/application/analysis.py` | Gera ranking, busca o artefato mais recente utilizável, calcula oportunidade e relatório de carteira. |
 | `midas_core/application/portfolio_ledger.py` | Caso de uso do livro de operações: payload, CRUD com revalidação e resumo de posição/P&L. |
 | `midas_core/application/jobs.py` | Jobs persistidos: enfileirar, consultar, cancelar, retry e `JobWorker`. |
+| `midas_core/application/market_quality.py` | Relatório de proveniência e frescor dos preços. |
 | `midas_core/domain/jobs.py` | Estados, transições e erro seguro de jobs. |
+| `midas_core/domain/market_quality.py` | Política de fontes, frescor e outcome de coleta. |
 | `midas_core/worker.py` | Entrypoint do worker dedicado de jobs. |
 | `midas_core/application/market_import.py` | Importador brapi com validação, parsing e persistência. |
 | `midas_core/application/market_import_yahoo.py` | Importador Yahoo tolerante a falhas parciais. |
@@ -119,6 +121,7 @@ Este catálogo registra todos os arquivos relevantes de código, configuração,
 | `test_portfolio.py` | Cálculo de posição, P&L e rejeição de venda descoberta. |
 | `test_portfolio_ledger.py` | Caso de uso do livro, edição/exclusão controladas e resumo. |
 | `test_jobs.py` | Transições, worker, retry e recuperação de jobs. |
+| `test_market_quality.py` | Fontes, frescor, coleta parcial e fundamentos Yahoo. |
 | `README.md` | Instalação, importação, treino, avisos de risco e comandos. |
 | `docs/architecture.md` | Camadas, fluxos e regras arquiteturais. |
 | `docs/data-model.md` | Modelo lógico, invariantes e ligação entre bancos. |

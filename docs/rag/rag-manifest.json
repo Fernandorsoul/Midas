@@ -16,8 +16,8 @@
     {
       "id": "market-data",
       "path": "02-market-data.md",
-      "keywords": ["cotação", "preço", "ticker", "yahoo", "brapi", "importação", "fonte", "histórico"],
-      "code_roots": ["midas_core/infrastructure", "midas_core/application/market_import.py", "midas_core/application/market_import_yahoo.py"]
+      "keywords": ["cotação", "preço", "ticker", "yahoo", "brapi", "importação", "fonte", "histórico", "qualidade", "proveniência", "stale"],
+      "code_roots": ["midas_core/domain/market_quality.py", "midas_core/application/market_quality.py", "midas_core/infrastructure", "midas_core/application/market_import.py", "midas_core/application/market_import_yahoo.py"]
     },
     {
       "id": "portfolio",
@@ -59,7 +59,7 @@
       "id": "quality",
       "path": "09-quality.md",
       "keywords": ["teste", "bug", "qualidade", "aceite", "regressão", "monitoramento"],
-      "code_roots": ["test_analysis.py", "test_http.py", "test_market_api.py", "test_midas.py", "test_portfolio.py", "test_portfolio_ledger.py", "test_jobs.py"]
+      "code_roots": ["test_analysis.py", "test_http.py", "test_market_api.py", "test_midas.py", "test_portfolio.py", "test_portfolio_ledger.py", "test_jobs.py", "test_market_quality.py"]
     },
     {
       "id": "codebase-catalog",
