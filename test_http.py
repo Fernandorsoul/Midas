@@ -5,6 +5,7 @@ from http.server import HTTPServer
 from threading import Thread
 from unittest.mock import patch
 
+from midas_core.domain.auth import AuthError
 from midas_core.interfaces.http import RequestHandler
 
 
@@ -19,6 +20,15 @@ class HTTPTestBase(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.server.shutdown()
+
+    def setUp(self):
+        # Isola autenticação: a maioria dos testes de contrato não exercita login.
+        patcher = patch(
+            "midas_core.interfaces.http.current_user_from_header",
+            return_value={"id": 1, "email": "test@example.com"},
+        )
+        self.auth = patcher.start()
+        self.addCleanup(patcher.stop)
 
     def request(self, method, path, body=None, headers=None):
         import http.client
@@ -296,6 +306,43 @@ class PortfolioOperationsEndpointTests(HTTPTestBase):
         response = conn.getresponse()
         self.assertEqual(response.status, 403)
         conn.close()
+
+
+class AuthEndpointTests(HTTPTestBase):
+    def test_register_returns_201_without_password_echo(self):
+        with patch("midas_core.interfaces.http.register_user") as mock_register:
+            mock_register.return_value = {"user": {"id": 1, "email": "a@b.com"}}
+            status, body = self.request("POST", "/api/auth/register", {"email": "a@b.com", "password": "senha-forte-123"})
+            self.assertEqual(status, 201)
+            self.assertEqual(body["user"]["email"], "a@b.com")
+            self.assertNotIn("password", body)
+
+    def test_login_returns_token(self):
+        with patch("midas_core.interfaces.http.login_user") as mock_login:
+            mock_login.return_value = {"token": "abc", "user": {"id": 1, "email": "a@b.com"}}
+            status, body = self.request("POST", "/api/auth/login", {"email": "a@b.com", "password": "senha-forte-123"})
+            self.assertEqual(status, 200)
+            self.assertEqual(body["token"], "abc")
+
+    def test_login_invalid_credentials_401(self):
+        with patch("midas_core.interfaces.http.login_user", side_effect=AuthError("Credenciais inválidas.")):
+            status, body = self.request("POST", "/api/auth/login", {"email": "a@b.com", "password": "x"})
+            self.assertEqual(status, 401)
+
+    def test_me_requires_auth(self):
+        self.auth.return_value = None
+        # Simula 401: current_user_from_header levanta AuthError
+        with patch("midas_core.interfaces.http.current_user_from_header", side_effect=AuthError("Autenticação necessária.")):
+            status, body = self.request("GET", "/api/auth/me")
+            self.assertEqual(status, 401)
+
+    def test_operations_reject_unauthenticated(self):
+        with patch("midas_core.interfaces.http.current_user_from_header", side_effect=AuthError("Autenticação necessária.")):
+            status, body = self.request("POST", "/api/portfolio/operations", {
+                "ticker": "PETR4", "operation_type": "buy", "occurred_on": "2025-01-01", "quantity": 1, "unit_price": 10,
+            })
+            self.assertEqual(status, 401)
+            self.assertIn("Autenticação", body["error"])
 
 
 class JobsEndpointTests(HTTPTestBase):
