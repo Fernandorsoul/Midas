@@ -99,7 +99,7 @@ def _validate_import_payload(payload):
     }
 
 
-def enqueue_job(job_type, payload, repository=None):
+def enqueue_job(job_type, payload, repository=None, user_id=None):
     from midas_core.infrastructure.repositories import PostgresRepository
     repository = repository or PostgresRepository()
     kind = normalize_job_type(job_type)
@@ -109,7 +109,7 @@ def enqueue_job(job_type, payload, repository=None):
         clean = _validate_training_payload(payload)
     else:
         clean = _validate_import_payload(payload)
-    row = repository.insert_job(kind, clean)
+    row = repository.insert_job(kind, clean, user_id=user_id)
     return {"job": _row_to_api(row), "message": "Job enfileirado."}
 
 

@@ -20,6 +20,7 @@ PostgreSQL, MongoDB, segredos, isolamento de dados e controles de acesso.
 - `portfolios` e `portfolio_assets` persistem a lista de ativos e quantidade; a migração `001-persistent-portfolio.sql` é necessária para bancos já existentes.
 - `portfolio_operations` persiste o livro razão (compra, venda, aporte, retirada, dividendo, JCP, taxa, imposto) com moeda, datas e invariantes de quantidade/valor; migração `002-portfolio-operations.sql`.
 - `jobs` persiste treinamento e importação (tipo, status, etapa, payload, resultado, progresso, erro seguro, cancelamento); migração `003-jobs.sql`. Índice parcial impede dois treinos ativos.
+- `users` e `user_sessions` (migração `004-users.sql`); `user_id` em `portfolios`, `jobs` e `watchlists`. Senha: PBKDF2-HMAC-SHA256; sessão guarda só hash SHA-256 do token.
 - Série de preços por ativo usa uma única fonte, com preferência oficial (`yahoo.finance`, `brapi.dev`) sobre experimental (`enriched`).
 - MongoDB valida as coleções `datasets`, `training_samples` e `model_artifacts`; amostras têm índice único por dataset, ticker, data e horizonte.
 - Ao publicar um dataset, a aplicação tenta compensar uma falha de inserção de amostras removendo dataset e amostras do MongoDB. Não há transação entre MongoDB e PostgreSQL.
@@ -35,8 +36,9 @@ PostgreSQL, MongoDB, segredos, isolamento de dados e controles de acesso.
 
 - Nunca incluir `.env`, senhas ou tokens em contexto de RAG, logs ou respostas.
 - Segredos devem ser lidos por ambiente e não aparecer em URLs.
-- Não afirmar isolamento entre usuários até implementar `user_id`, autenticação e autorização.
-- Ao criar persistência de carteira, modelar propriedade desde o início.
+- Isolamento por `user_id`: rotas privadas/mutáveis exigem sessão (`Authorization: Bearer`); `assert_owner` nega acesso a recursos de outro usuário.
+- Tokens de sessão nunca são persistidos em claro; senha nunca aparece em respostas/logs.
+- Exportação (`GET /api/auth/export`) e exclusão (`POST /api/auth/delete`) não expõem hashes.
 
 ## Pontos de código
 

@@ -60,7 +60,7 @@ class FakeJobRepository:
         self.jobs = {}
         self._next_id = 1
 
-    def insert_job(self, job_type, payload, step="queued"):
+    def insert_job(self, job_type, payload, step="queued", user_id=None):
         if job_type == "training" and any(
             j["job_type"] == "training" and j["status"] in (QUEUED, RUNNING) for j in self.jobs.values()
         ):
@@ -79,6 +79,7 @@ class FakeJobRepository:
             "started_at": None,
             "finished_at": None,
             "updated_at": None,
+            "user_id": user_id,
         }
         self.jobs[job["id"]] = job
         self._next_id += 1
