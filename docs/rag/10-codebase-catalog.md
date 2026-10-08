@@ -107,7 +107,10 @@ Este catálogo registra todos os arquivos relevantes de código, configuração,
 | `infra/postgres/migrations/001-persistent-portfolio.sql` | Tabelas `portfolios` e `portfolio_assets`. |
 | `infra/postgres/migrations/002-portfolio-operations.sql` | Tabela `portfolio_operations` e invariantes do livro razão. |
 | `infra/postgres/migrations/003-jobs.sql` | Tabela `jobs` e índice de treino único ativo. |
-| `scripts/migrate_postgres.py` | Aplica migrations em ordem via Docker. |
+| `scripts/migrate_postgres.py` | Executor versionado de migrações com `schema_migrations` e checksum. |
+| `scripts/check_quality.py` | JS + testes Python + healthcheck em um comando. |
+| `scripts/validate_rag.py` | Valida manifesto e módulos RAG. |
+| `.github/workflows/ci.yml` | CI: sintaxe JS, testes e migrações idempotentes. |
 | `infra/mongo/01-init.js` | Usuário, coleções, validadores e índices MongoDB. |
 | `infra/rag-postgres/01-init.sql` | Extensão pgvector e tabela/índices `rag_chunks`. |
 | `config/stock-universe.txt` | Universo manual de 34 tickers B3 para importação. |

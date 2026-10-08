@@ -78,3 +78,4 @@ Há testes de regras de análise, HTTP, importação e treinamento. Endpoints b�
 - `test_wealth.py`
 - `test_model_artifacts.py`
 - `test_auth.py`
+- `test_migrations.py`
