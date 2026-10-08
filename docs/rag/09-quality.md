@@ -36,6 +36,10 @@ Há testes de regras de análise, HTTP, importação e treinamento. Endpoints b�
 
 - `test_wealth.py` cobre TWR sem distorção de aporte, XIRR, alocação, rebase de benchmarks e reconciliação do dashboard.
 
+## Cobertura de artefatos de modelo
+
+- `test_model_artifacts.py` cobre round-trip ridge/ensemble, rejeição de modelo não serializável, semântica de ensemble (2+ membros), explicação de fatores e bloqueio de publicação do run.
+
 ## Critérios de aceite transversais
 
 - Não perder dados de usuário ao reiniciar.
@@ -60,3 +64,4 @@ Há testes de regras de análise, HTTP, importação e treinamento. Endpoints b�
 - `test_jobs.py`
 - `test_market_quality.py`
 - `test_wealth.py`
+- `test_model_artifacts.py`
