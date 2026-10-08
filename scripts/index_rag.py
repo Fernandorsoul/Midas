@@ -1,8 +1,8 @@
 """Indexa a documentação RAG modular no PostgreSQL com pgvector.
 
-O script não gera embeddings: ele atualiza o índice textual e os metadados dos
-documentos-fonte. Embeddings devem ser incluídos por uma etapa explícita depois
-da escolha do modelo, sem enviar arquivos fora de docs/rag para provedores.
+Gera embeddings apenas para chunks em `docs/rag/` novos ou alterados.
+Modelo: `local-hash-256` (determinístico, sem provedor externo).
+Nunca indexa `.env`, código bruto, bancos ou dumps.
 """
 from __future__ import annotations
 
@@ -19,6 +19,10 @@ from psycopg.types.json import Jsonb
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 RAG_ROOT = PROJECT_ROOT / "docs" / "rag"
 HEADING = re.compile(r"^(#{1,3})\s+(.+)$", re.MULTILINE)
+
+import sys
+sys.path.insert(0, str(PROJECT_ROOT))
+from midas_core.domain.rag import EMBEDDING_MODEL, embed_text  # noqa: E402
 
 
 def split_sections(source_path: Path):
@@ -56,7 +60,11 @@ def connect():
     )
 
 
-def index_documents(check_only: bool = False):
+def _vector_literal(values):
+    return "[" + ",".join(f"{float(v):.6f}" for v in values) + "]"
+
+
+def index_documents(check_only: bool = False, generate_embeddings: bool = True):
     documents = sorted(RAG_ROOT.glob("*.md"))
     if not documents:
         raise ValueError("Nenhum documento encontrado em docs/rag.")
@@ -69,6 +77,8 @@ def index_documents(check_only: bool = False):
                 module_for(document), relative, index, title, content,
                 hashlib.sha256(content.encode("utf-8")).hexdigest(),
                 len(content.split()), Jsonb({"kind": "rag-document"}),
+                EMBEDDING_MODEL,
+                _vector_literal(embed_text(title + "\n" + content)) if generate_embeddings else None,
             ))
         documents_chunks[relative] = document_chunks
     if check_only:
@@ -85,14 +95,29 @@ def index_documents(check_only: bool = False):
                 current_hashes = [row[0] for row in cursor.fetchall()]
                 expected_hashes = [chunk[5] for chunk in chunks]
                 if current_hashes == expected_hashes:
+                    if generate_embeddings:
+                        # Backfill: preenche embeddings ausentes sem recriar chunks.
+                        cursor.execute(
+                            "SELECT COUNT(*) FROM rag_chunks WHERE source_path=%s AND embedding IS NULL",
+                            (source_path,),
+                        )
+                        missing = cursor.fetchone()[0]
+                        if missing:
+                            for chunk in chunks:
+                                cursor.execute(
+                                    """UPDATE rag_chunks SET embedding=%s::vector, embedding_model=%s
+                                       WHERE source_path=%s AND chunk_index=%s AND embedding IS NULL""",
+                                    (chunk[9], EMBEDDING_MODEL, source_path, chunk[2]),
+                                )
+                            indexed += missing
                     continue
                 cursor.execute("DELETE FROM rag_chunks WHERE source_path=%s", (source_path,))
                 if chunks:
                     cursor.executemany(
                         """INSERT INTO rag_chunks(
                             module,source_path,chunk_index,title,content,content_hash,
-                            token_count,metadata
-                        ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+                            token_count,metadata,embedding_model,embedding
+                        ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::vector)""",
                         chunks,
                     )
                 indexed += len(chunks)
@@ -102,8 +127,12 @@ def index_documents(check_only: bool = False):
 def main():
     parser = argparse.ArgumentParser(description="Indexa somente a documentação RAG modular.")
     parser.add_argument("--check", action="store_true", help="Valida os chunks sem conectar ao banco.")
+    parser.add_argument("--no-embeddings", action="store_true", help="Não gera embeddings nesta execução.")
     arguments = parser.parse_args()
-    count = index_documents(check_only=arguments.check)
+    count = index_documents(
+        check_only=arguments.check,
+        generate_embeddings=not arguments.no_embeddings,
+    )
     action = "Chunks validados" if arguments.check else "Chunks indexados ou atualizados"
     print(f"{action}: {count}")
 

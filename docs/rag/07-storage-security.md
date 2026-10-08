@@ -38,7 +38,7 @@ PostgreSQL, MongoDB, segredos, isolamento de dados e controles de acesso.
 
 - PostgreSQL operacional: banco `midas`, usuário de aplicação `midas_app`, conexão com timeout de 5 segundos e linhas em formato de dicionário.
 - MongoDB operacional: banco e autenticação `midas_training`, usuário `midas_app`, seleção de servidor com timeout de 5 segundos e datas timezone-aware.
-- RAG: serviço separado `rag-postgres`, banco `midas_rag`, usuário `midas_rag`, porta local padrão 5433. A tabela `rag_chunks` suporta busca textual em português e embeddings sem dimensão fixa; o índice vetorial depende do modelo de embedding escolhido. `scripts/index_rag.py` compara hashes por documento e reindexa somente módulos RAG novos ou alterados.
+- RAG: serviço separado `rag-postgres`, banco `midas_rag`, usuário `midas_rag`, porta local padrão 5433. Modelo de embedding registrado: **`local-hash-256`** (dimensão 256, determinístico, sem provedor externo). Índice vetorial HNSW em `002-embedding-index.sql`. `scripts/index_rag.py` compara hashes e só reindexa/genera embeddings de chunks novos ou alterados.
 
 ## Regras de segurança
 
