@@ -22,6 +22,11 @@ Há testes de regras de análise, HTTP, importação e treinamento. Endpoints b�
 - `test_portfolio_ledger.py` cobre `total_pnl`, moeda única, payload, lançamento, edição/exclusão controladas e resumo de posição com repositório fake.
 - `test_http.py` cobre rotas de operações/posições, validação de `id` e origem.
 
+## Cobertura de jobs
+
+- `test_jobs.py` cobre transições, erro seguro, enfileiramento, unicidade de treino, worker (sucesso/falha/cancelamento), retry e recuperação de running interrompido.
+- `test_http.py` cobre rotas de jobs, treino (202/400/409), import enfileirada (202) e status persistido.
+
 ## Critérios de aceite transversais
 
 - Não perder dados de usuário ao reiniciar.
@@ -43,3 +48,4 @@ Há testes de regras de análise, HTTP, importação e treinamento. Endpoints b�
 - `test_midas.py`
 - `test_portfolio.py`
 - `test_portfolio_ledger.py`
+- `test_jobs.py`

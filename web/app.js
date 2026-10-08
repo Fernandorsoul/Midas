@@ -1,4 +1,4 @@
-import { getAnalysis, getPortfolio, getPortfolioList, addToPortfolio, removeFromPortfolio, getPortfolioDividends, startTraining, getTrainingStatus } from './api.js';
+import { getAnalysis, getPortfolio, getPortfolioList, addToPortfolio, removeFromPortfolio, getPortfolioDividends, startTraining, getTrainingStatus, getJob } from './api.js';
 import { AssetExplorer } from './AssetExplorer.js';
 import { EvaluationPanel } from './EvaluationPanel.js';
 import { Layout } from './layout.js';
@@ -277,12 +277,34 @@ function App() {
   async function handleAddTicker(ticker, quantity) {
     try {
       const result = await addToPortfolio(ticker, quantity);
-      setPortfolioList(result.tickers || []);
-      setPortfolioData(result.portfolio || {});
-      const portfolioResult = await getPortfolio(horizon);
-      setPortfolio(portfolioResult);
+      const job = result.job;
+      if (!job?.id) return;
+      setStatus(`Importando ${ticker}...`);
+      const timer = setInterval(async () => {
+        try {
+          const next = await getJob(job.id);
+          if (next.job.status === 'succeeded') {
+            clearInterval(timer);
+            const [listData, portfolioResult] = await Promise.all([
+              getPortfolioList(),
+              getPortfolio(horizon),
+            ]);
+            setPortfolioList(listData.tickers || []);
+            setPortfolioData(listData.portfolio || {});
+            setPortfolio(portfolioResult);
+            setStatus('');
+          } else if (next.job.status === 'failed' || next.job.status === 'cancelled') {
+            clearInterval(timer);
+            setStatus(next.job.error || 'Importação não concluída.');
+          }
+        } catch {
+          clearInterval(timer);
+          setStatus('Não foi possível acompanhar o job de importação.');
+        }
+      }, 1500);
     } catch (error) {
       console.error('Erro ao adicionar ativo:', error);
+      setStatus(error.message || 'Falha ao enfileirar importação.');
     }
   }
 
@@ -302,15 +324,16 @@ function App() {
     try {
       const result = await startTraining(trainHorizon);
       setJob(result);
+      const jobId = result.id;
       const timer = setInterval(async () => {
         try {
-          const next = await getTrainingStatus();
+          const next = jobId ? (await getJob(jobId)).job : await getTrainingStatus();
           setJob(next);
           if (next.status === 'succeeded' || next.status === 'finished') {
             clearInterval(timer);
             const portfolioResult = await getPortfolio(horizon);
             setPortfolio(portfolioResult);
-          } else if (next.status === 'failed') {
+          } else if (next.status === 'failed' || next.status === 'cancelled') {
             clearInterval(timer);
           }
         } catch {

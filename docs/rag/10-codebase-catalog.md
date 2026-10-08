@@ -37,6 +37,9 @@ Este catálogo registra todos os arquivos relevantes de código, configuração,
 | `midas_core/application/training.py` | Carrega amostras, treina, salva artefato MongoDB e run PostgreSQL com compensação simples. |
 | `midas_core/application/analysis.py` | Gera ranking, busca o artefato mais recente utilizável, calcula oportunidade e relatório de carteira. |
 | `midas_core/application/portfolio_ledger.py` | Caso de uso do livro de operações: payload, CRUD com revalidação e resumo de posição/P&L. |
+| `midas_core/application/jobs.py` | Jobs persistidos: enfileirar, consultar, cancelar, retry e `JobWorker`. |
+| `midas_core/domain/jobs.py` | Estados, transições e erro seguro de jobs. |
+| `midas_core/worker.py` | Entrypoint do worker dedicado de jobs. |
 | `midas_core/application/market_import.py` | Importador brapi com validação, parsing e persistência. |
 | `midas_core/application/market_import_yahoo.py` | Importador Yahoo tolerante a falhas parciais. |
 | `midas_core/application/__init__.py` | Marcador de pacote. |
@@ -97,6 +100,7 @@ Este catálogo registra todos os arquivos relevantes de código, configuração,
 | `infra/postgres/01-init.sh` | Roles, tabelas e privilégios do PostgreSQL operacional. |
 | `infra/postgres/migrations/001-persistent-portfolio.sql` | Tabelas `portfolios` e `portfolio_assets`. |
 | `infra/postgres/migrations/002-portfolio-operations.sql` | Tabela `portfolio_operations` e invariantes do livro razão. |
+| `infra/postgres/migrations/003-jobs.sql` | Tabela `jobs` e índice de treino único ativo. |
 | `scripts/migrate_postgres.py` | Aplica migrations em ordem via Docker. |
 | `infra/mongo/01-init.js` | Usuário, coleções, validadores e índices MongoDB. |
 | `infra/rag-postgres/01-init.sql` | Extensão pgvector e tabela/índices `rag_chunks`. |
@@ -114,6 +118,7 @@ Este catálogo registra todos os arquivos relevantes de código, configuração,
 | `test_midas.py` | Expurgo temporal, fatores sem futuro, correlação e treinador. |
 | `test_portfolio.py` | Cálculo de posição, P&L e rejeição de venda descoberta. |
 | `test_portfolio_ledger.py` | Caso de uso do livro, edição/exclusão controladas e resumo. |
+| `test_jobs.py` | Transições, worker, retry e recuperação de jobs. |
 | `README.md` | Instalação, importação, treino, avisos de risco e comandos. |
 | `docs/architecture.md` | Camadas, fluxos e regras arquiteturais. |
 | `docs/data-model.md` | Modelo lógico, invariantes e ligação entre bancos. |
