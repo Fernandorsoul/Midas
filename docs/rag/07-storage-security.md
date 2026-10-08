@@ -26,6 +26,14 @@ PostgreSQL, MongoDB, segredos, isolamento de dados e controles de acesso.
 - Ao publicar um dataset, a aplicação tenta compensar uma falha de inserção de amostras removendo dataset e amostras do MongoDB. Não há transação entre MongoDB e PostgreSQL.
 - Favoritos usam lock transacional consultivo PostgreSQL para evitar corrida na criação da watchlist compartilhada.
 
+## Migrações
+
+- Executor versionado: `scripts/migrate_postgres.py` (`--check`, `--status`, `--baseline`).
+- Tabela `schema_migrations` registra filename + checksum SHA-256; migração editada após aplicação falha com diagnóstico (criar nova migração).
+- Falha de migração reverte a transação e **não** pede apagar volume.
+- Comandos: `scripts/check_quality.py` (JS + testes + health) e `scripts/validate_rag.py`.
+- CI: `.github/workflows/ci.yml` (PR e push em dev/master) com testes e migrações idempotentes em Postgres efêmero — sem segredos reais.
+
 ## Conexões
 
 - PostgreSQL operacional: banco `midas`, usuário de aplicação `midas_app`, conexão com timeout de 5 segundos e linhas em formato de dicionário.

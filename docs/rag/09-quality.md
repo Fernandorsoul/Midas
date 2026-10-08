@@ -45,6 +45,13 @@ Há testes de regras de análise, HTTP, importação e treinamento. Endpoints b�
 - `test_auth.py` cobre hash de senha, tokens de sessão, `assert_owner` (nega acesso a outro usuário e recurso sem dono), login/logout e export/exclusão sem hashes.
 - `test_http.py` cobre 401 em rotas privadas e contratos de auth.
 
+## Cobertura de migrações e CI
+
+- `test_migrations.py` cobre checksum, detecção de drift e presença dos scripts de check/RAG/CI.
+- `scripts/check_quality.py` executa JS + testes + healthcheck em um comando.
+- `scripts/validate_rag.py` valida manifesto/RAG.
+- CI (`.github/workflows/ci.yml`) roda checks e migrações idempotentes em PR/push.
+
 ## Critérios de aceite transversais
 
 - Não perder dados de usuário ao reiniciar.
@@ -71,3 +78,4 @@ Há testes de regras de análise, HTTP, importação e treinamento. Endpoints b�
 - `test_wealth.py`
 - `test_model_artifacts.py`
 - `test_auth.py`
+- `test_migrations.py`
