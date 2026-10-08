@@ -103,6 +103,7 @@ CREATE TABLE jobs (
     started_at timestamptz,
     finished_at timestamptz,
     updated_at timestamptz NOT NULL DEFAULT now(),
+    user_id bigint,
     CONSTRAINT job_running_has_started CHECK (
         (status = 'running' AND started_at IS NOT NULL) OR status <> 'running'
     ),
@@ -116,6 +117,24 @@ CREATE UNIQUE INDEX jobs_single_training
     WHERE job_type = 'training' AND status IN ('queued', 'running');
 CREATE INDEX jobs_status_created ON jobs (status, created_at, id);
 CREATE INDEX jobs_type_status ON jobs (job_type, status, created_at DESC);
+CREATE TABLE users (
+    id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    email text NOT NULL UNIQUE,
+    password_hash text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE user_sessions (
+    token_hash text PRIMARY KEY,
+    user_id bigint NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    expires_at timestamptz NOT NULL
+);
+CREATE INDEX idx_user_sessions_user ON user_sessions (user_id);
+ALTER TABLE portfolios ADD COLUMN user_id bigint REFERENCES users(id);
+ALTER TABLE jobs ADD COLUMN user_id bigint REFERENCES users(id);
+ALTER TABLE watchlists ADD COLUMN user_id bigint REFERENCES users(id);
+CREATE INDEX idx_portfolios_user ON portfolios (user_id);
+CREATE INDEX idx_jobs_user ON jobs (user_id);
 COMMENT ON COLUMN model_runs.dataset_id IS 'ID lógico do snapshot em midas_training.datasets; referência entre bancos validada pela aplicação.';
 GRANT CONNECT ON DATABASE midas TO midas_app;
 GRANT USAGE ON SCHEMA public TO midas_app;

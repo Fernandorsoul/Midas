@@ -21,6 +21,12 @@ Contratos HTTP locais, validação de entrada, status de tarefas e tratamento de
 | `GET /api/portfolio/positions` | Posição, custo, P&L e retorno total |
 | `GET /api/market/quality` | Proveniência, frescor e política de fontes |
 | `GET /api/wealth/dashboard` | Patrimônio, TWR/XIRR, alocação e benchmarks |
+| `POST /api/auth/register` | Cria usuário (201) |
+| `POST /api/auth/login` | Login e token de sessão |
+| `POST /api/auth/logout` | Encerra sessão |
+| `GET /api/auth/me` | Usuário autenticado |
+| `GET /api/auth/export` | Exporta dados do usuário |
+| `POST /api/auth/delete` | Exclui dados e conta |
 | `PUT /api/favorites` | Altera favorito |
 | `POST /api/training` | Enfileira job de treinamento (202) |
 | `GET /api/training/status` | Último job de treino persistido |

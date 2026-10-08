@@ -8,6 +8,15 @@ import psycopg
 from pymongo.errors import PyMongoError
 
 from midas_core.application.analysis import build_report, build_portfolio_report, set_favorite
+from midas_core.application.auth import (
+    AuthError,
+    current_user_from_header,
+    delete_my_data,
+    export_my_data,
+    login_user,
+    logout_user,
+    register_user,
+)
 from midas_core.application.jobs import (
     cancel_job,
     enqueue_job,
@@ -50,6 +59,22 @@ class RequestHandler(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         url = urlparse(self.path)
+        if url.path == "/api/auth/me":
+            user = self._current_user()
+            if user:
+                self.respond(200, {"user": user})
+            return
+        if url.path == "/api/auth/export":
+            user = self._current_user()
+            if not user:
+                return
+            try:
+                self.respond(200, export_my_data(user["id"], repository=PostgresRepository()))
+            except ValueError as error:
+                self.respond(400, {"error": str(error)})
+            except psycopg.Error:
+                self.respond(503, {"error": "Não foi possível acessar o PostgreSQL."})
+            return
         if url.path == "/api/training/status":
             try:
                 result = latest_job("training", repository=PostgresRepository())
@@ -146,6 +171,49 @@ class RequestHandler(SimpleHTTPRequestHandler):
             super().do_GET()
 
     def do_POST(self):
+        if self.path == "/api/auth/register":
+            if not self._require_same_origin():
+                return
+            try:
+                body = self._read_json()
+                self.respond(201, register_user(body.get("email"), body.get("password"), repository=PostgresRepository()))
+            except (AuthError, ValueError) as error:
+                self.respond(400, {"error": str(error)})
+            except psycopg.Error:
+                self.respond(503, {"error": "Não foi possível acessar o PostgreSQL."})
+            return
+        if self.path == "/api/auth/login":
+            if not self._require_same_origin():
+                return
+            try:
+                body = self._read_json()
+                self.respond(200, login_user(body.get("email"), body.get("password"), repository=PostgresRepository()))
+            except (AuthError, ValueError) as error:
+                self.respond(401, {"error": str(error)})
+            except psycopg.Error:
+                self.respond(503, {"error": "Não foi possível acessar o PostgreSQL."})
+            return
+        if self.path == "/api/auth/logout":
+            user = self._current_user()
+            if not user:
+                return
+            try:
+                token = self.headers.get("Authorization", "").split(None, 1)[-1]
+                self.respond(200, logout_user(token, repository=PostgresRepository()))
+            except (AuthError, ValueError) as error:
+                self.respond(400, {"error": str(error)})
+            return
+        if self.path == "/api/auth/delete":
+            user = self._current_user()
+            if not user:
+                return
+            try:
+                self.respond(200, delete_my_data(user["id"], repository=PostgresRepository()))
+            except (AuthError, ValueError) as error:
+                self.respond(400, {"error": str(error)})
+            except psycopg.Error:
+                self.respond(503, {"error": "Não foi possível acessar o PostgreSQL."})
+            return
         if self.path == "/api/portfolio/add":
             if not self._require_same_origin():
                 return
@@ -189,6 +257,9 @@ class RequestHandler(SimpleHTTPRequestHandler):
         if self.path == "/api/portfolio/operations":
             if not self._require_same_origin():
                 return
+            user = self._current_user()
+            if not user:
+                return
             try:
                 body = self._read_json()
                 self.respond(201, record_operation(body, repository=PostgresRepository()))
@@ -199,6 +270,9 @@ class RequestHandler(SimpleHTTPRequestHandler):
             return
         if self.path == "/api/portfolio/operations/delete":
             if not self._require_same_origin():
+                return
+            user = self._current_user()
+            if not user:
                 return
             try:
                 body = self._read_json()
@@ -214,11 +288,14 @@ class RequestHandler(SimpleHTTPRequestHandler):
         if self.path == "/api/jobs":
             if not self._require_same_origin():
                 return
+            user = self._current_user()
+            if not user:
+                return
             try:
                 body = self._read_json()
                 result = enqueue_job(body.get("type") or body.get("job_type"), body.get("payload") or {
                     key: body[key] for key in ("horizon", "tickers", "source", "ticker", "quantity", "add_to_portfolio", "range") if key in body
-                }, repository=PostgresRepository())
+                }, repository=PostgresRepository(), user_id=user["id"])
                 self.respond(202, result)
             except ValueError as error:
                 self.respond(400, {"error": str(error)})
@@ -258,6 +335,9 @@ class RequestHandler(SimpleHTTPRequestHandler):
             return
         if not self._require_same_origin():
             return
+        user = self._current_user()
+        if not user:
+            return
         try:
             body = self._read_json()
             horizon = body.get("horizon", 6)
@@ -266,7 +346,7 @@ class RequestHandler(SimpleHTTPRequestHandler):
                 "horizon": horizon,
                 "tickers": tickers,
                 "source": None,
-            }, repository=PostgresRepository())
+            }, repository=PostgresRepository(), user_id=user["id"])
             self.respond(202, result["job"])
         except ValueError as error:
             self.respond(409 if "Já existe" in str(error) else 400, {"error": str(error)})
@@ -310,6 +390,20 @@ class RequestHandler(SimpleHTTPRequestHandler):
             self.respond(403, {"error": "Origem não permitida."})
             return False
         return True
+
+    def _current_user(self):
+        """Retorna o usuário autenticado ou None após responder 401/403."""
+        try:
+            return current_user_from_header(
+                self.headers.get("Authorization"),
+                repository=PostgresRepository(),
+            )
+        except AuthError as error:
+            self.respond(401, {"error": str(error)})
+            return None
+        except psycopg.Error:
+            self.respond(503, {"error": "Não foi possível acessar o PostgreSQL."})
+            return None
 
     def _read_json(self):
         size = int(self.headers.get("Content-Length", "0"))
