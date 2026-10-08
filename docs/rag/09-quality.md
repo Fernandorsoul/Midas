@@ -52,6 +52,10 @@ Há testes de regras de análise, HTTP, importação e treinamento. Endpoints b�
 - `scripts/validate_rag.py` valida manifesto/RAG.
 - CI (`.github/workflows/ci.yml`) roda checks e migrações idempotentes em PR/push.
 
+## Cobertura de recuperação RAG
+
+- `test_rag.py` cobre embedding `local-hash-256`, similaridade, score híbrido, limite de 3 chunks com fonte e filtro por módulo.
+
 ## Critérios de aceite transversais
 
 - Não perder dados de usuário ao reiniciar.
@@ -79,3 +83,4 @@ Há testes de regras de análise, HTTP, importação e treinamento. Endpoints b�
 - `test_model_artifacts.py`
 - `test_auth.py`
 - `test_migrations.py`
+- `test_rag.py`
