@@ -1,5 +1,6 @@
-import { getAnalysis, getPortfolio, getPortfolioList, addToPortfolio, removeFromPortfolio, getPortfolioDividends, startTraining, getTrainingStatus, getJob } from './api.js';
+import { getAnalysis, getPortfolio, getPortfolioList, addToPortfolio, removeFromPortfolio, getPortfolioDividends, startTraining, getTrainingStatus, getJob, getCurrentUser, getSessionUser, getSessionToken } from './api.js';
 import { AssetExplorer } from './AssetExplorer.js';
+import { AuthPanel } from './AuthPanel.js';
 import { EvaluationPanel } from './EvaluationPanel.js';
 import { Layout } from './layout.js';
 import { OperationsLedger } from './OperationsLedger.js';
@@ -246,8 +247,14 @@ function App() {
   const [filters, setFilters] = useState({ query: '', category: '', sector: '', saved: false, candidates: false });
 
   const [toasts, setToasts] = useState([]);
+  const [authUser, setAuthUser] = useState(() => getSessionUser());
 
   function notify(message, tone = 'info') {
+    if (tone === 'error' && message && /autentica|sessão|sessao/i.test(message)) {
+      setAuthUser(null);
+      setStatus('Entre com sua conta para continuar.');
+      return;
+    }
     const id = nextToastId();
     setToasts(current => [...current, { id, message, tone }]);
     if (tone !== 'error') {
@@ -257,6 +264,19 @@ function App() {
 
   function dismissToast(id) {
     setToasts(current => current.filter(item => item.id !== id));
+  }
+
+  async function refreshSession() {
+    if (!getSessionToken()) {
+      setAuthUser(null);
+      return;
+    }
+    try {
+      const data = await getCurrentUser();
+      setAuthUser(data.user || getSessionUser());
+    } catch {
+      setAuthUser(null);
+    }
   }
 
   async function load() {
@@ -276,13 +296,18 @@ function App() {
       setPortfolioData(portfolioListData.portfolio || {});
       setDividends(dividendsData.dividends || {});
       setStatus('');
-    } catch {
+    } catch (error) {
       setData(null);
       setAssets([]);
       setPortfolio(null);
       setPortfolioList([]);
       setPortfolioData({});
       setDividends({});
+      if (error && error.requiresAuth) {
+        setAuthUser(null);
+        setStatus('Entre com sua conta para ver a carteira.');
+        return;
+      }
       const message = 'Falha ao acessar os bancos. Verifique os serviços e recarregue.';
       setStatus(message);
       notify(message, 'error');
@@ -291,8 +316,24 @@ function App() {
     }
   }
 
-  useEffect(() => { load(); }, [horizon]);
+  useEffect(() => { refreshSession().then(load); }, [horizon]);
   useEffect(() => { getTrainingStatus().then(setJob).catch(() => {}); }, []);
+
+  function handleAuthSuccess(user) {
+    setAuthUser(user);
+    notify('Sessão iniciada.', 'success');
+    load();
+  }
+
+  function handleAuthLogout() {
+    setAuthUser(null);
+    notify('Sessão encerrada.', 'info');
+    setData(null);
+    setAssets([]);
+    setPortfolio(null);
+    setPortfolioList([]);
+    setPortfolioData({});
+  }
 
   function updateFavorite(assetId, saved) {
     setAssets(current => current.map(asset => asset.id === assetId ? { ...asset, favorite: saved } : asset));
@@ -382,6 +423,9 @@ function App() {
   }
 
   function renderPage() {
+    if (!authUser) {
+      return h(AuthPanel, { user: null, onSuccess: handleAuthSuccess, onLogout: handleAuthLogout });
+    }
     switch (currentPage) {
       case 'portfolio':
         return h(PortfolioPage, { portfolio, loading, horizon, portfolioList, portfolioData, dividends, onAdd: handleAddTicker, onRemove: handleRemoveTicker, onTrain: handleTrainPortfolio, job });
@@ -403,6 +447,7 @@ function App() {
       h('span', null, 'Seu observatório de investimentos'), 
       h('div', { className: 'header-actions' },
         h('span', { className: 'pill', title: 'Fontes de mercado usadas no pipeline principal' }, '● Yahoo Finance · brapi.dev'),
+        authUser ? h(AuthPanel, { user: authUser, onSuccess: handleAuthSuccess, onLogout: handleAuthLogout }) : null,
       ),
     ),
     status ? h('div', { className: 'notice', role: 'status' }, status) : null,

@@ -1,11 +1,73 @@
+const TOKEN_KEY = 'midas_token';
+const USER_KEY = 'midas_user';
+
+export function getSessionToken() {
+  try { return localStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; }
+}
+
+export function getSessionUser() {
+  try {
+    const raw = localStorage.getItem(USER_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+export function setSession(token, user) {
+  try {
+    if (token) localStorage.setItem(TOKEN_KEY, token);
+    if (user) localStorage.setItem(USER_KEY, JSON.stringify(user));
+  } catch { /* ignore */ }
+}
+
+export function clearSession() {
+  try {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
+  } catch { /* ignore */ }
+}
+
 async function request(path, options = {}) {
-  const response = await fetch(path, options);
+  const headers = { ...(options.headers || {}) };
+  const token = getSessionToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const response = await fetch(path, { ...options, headers });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw Object.assign(new Error(data.error || data.message || 'Falha na requisição.'), { response, data });
+    const message = data.error || data.message || 'Falha na requisição.';
+    const error = Object.assign(new Error(message), { response, data, status: response.status });
+    if (response.status === 401 && !path.startsWith('/api/auth/')) {
+      error.requiresAuth = true;
+    }
+    throw error;
   }
   return data;
 }
+
+export const registerUser = (email, password) => request('/api/auth/register', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ email, password }),
+});
+
+export const loginUser = async (email, password) => {
+  const data = await request('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+  setSession(data.token, data.user);
+  return data;
+};
+
+export const logoutUser = async () => {
+  try {
+    await request('/api/auth/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+  } finally {
+    clearSession();
+  }
+};
+
+export const getCurrentUser = () => request('/api/auth/me');
 
 export const getAnalysis = horizon => request(`/api/analysis?horizon=${horizon}`);
 
