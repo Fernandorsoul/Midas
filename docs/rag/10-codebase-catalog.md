@@ -41,6 +41,8 @@ Este catálogo registra todos os arquivos relevantes de código, configuração,
 | `midas_core/application/market_quality.py` | Relatório de proveniência e frescor dos preços. |
 | `midas_core/domain/jobs.py` | Estados, transições e erro seguro de jobs. |
 | `midas_core/domain/market_quality.py` | Política de fontes, frescor e outcome de coleta. |
+| `midas_core/domain/screener.py` | Score de oportunidade com critérios explícitos e disclaimer. |
+| `midas_core/application/screener.py` | Screener a partir do universo de preços e features. |
 | `midas_core/domain/model_artifacts.py` | Contrato versionado de artefatos e explicação de fatores. |
 | `midas_core/domain/wealth.py` | TWR, XIRR, alocação e rebase de benchmarks. |
 | `midas_core/application/wealth_dashboard.py` | Dashboard patrimonial e comparação com CDI/Ibovespa. |

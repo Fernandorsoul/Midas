@@ -8,6 +8,7 @@ import { createRoot, React, useEffect, useMemo, useState } from './react.js';
 import { TrainingConsole } from './TrainingConsole.js';
 import { ValidationHistory } from './ValidationHistory.js';
 import { WealthDashboard } from './WealthDashboard.js';
+import { ScreenerPanel } from './ScreenerPanel.js';
 import { h, StatCard, Toast, nextToastId } from './ui.js';
 
 // Portfolio Manager Component
@@ -431,6 +432,8 @@ function App() {
         return h(PortfolioPage, { portfolio, loading, horizon, portfolioList, portfolioData, dividends, onAdd: handleAddTicker, onRemove: handleRemoveTicker, onTrain: handleTrainPortfolio, job });
       case 'assets':
         return h(AssetsPage, { assets, loading, horizon, setHorizon, status, setStatus, onFavoriteChange: updateFavorite, filters, setFilters });
+      case 'screener':
+        return h(ScreenerPanel);
       case 'training':
         return h(TrainingPage, { horizon, job, setJob, onFinished: load });
       case 'validation':

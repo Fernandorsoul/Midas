@@ -27,6 +27,7 @@ from midas_core.application.jobs import (
     JobWorker,
 )
 from midas_core.application.market_quality import market_quality_report
+from midas_core.application.screener import run_screener
 from midas_core.application.wealth_dashboard import wealth_dashboard
 from midas_core.application.portfolio_ledger import (
     delete_operation,
@@ -87,6 +88,23 @@ class RequestHandler(SimpleHTTPRequestHandler):
                     self.respond(200, job)
             except psycopg.Error:
                 self.respond(503, {"error": "Não foi possível acessar o PostgreSQL."})
+            return
+        if url.path == "/api/screener":
+            try:
+                q = parse_qs(url.query)
+                min_volume = q.get("min_volume", [None])[0]
+                self.respond(200, run_screener(
+                    repository=PostgresRepository(),
+                    query=q.get("query", [None])[0],
+                    category=q.get("category", [None])[0] or None,
+                    sector=q.get("sector", [None])[0] or None,
+                    min_volume=float(min_volume) if min_volume not in (None, "") else None,
+                    limit=int(q.get("limit", ["20"])[0]),
+                ))
+            except (ValueError, TypeError) as error:
+                self.respond(400, {"error": str(error)})
+            except (psycopg.Error, PyMongoError, KeyError):
+                self.respond(503, {"error": "Não foi possível acessar os bancos de dados."})
             return
         if url.path == "/api/market/quality":
             try:
