@@ -22,8 +22,8 @@
     {
       "id": "portfolio",
       "path": "03-portfolio.md",
-      "keywords": ["carteira", "posição", "compra", "venda", "preço médio", "dividendo", "JCP", "P&L", "provento", "operação", "livro", "custo", "realizado"],
-      "code_roots": ["midas_core/domain/portfolio.py", "midas_core/application/portfolio_ledger.py", "midas_core/interfaces/http.py", "midas_core/application/analysis.py", "web/OperationsLedger.js", "web/app.js"]
+      "keywords": ["carteira", "posição", "compra", "venda", "preço médio", "dividendo", "JCP", "P&L", "provento", "operação", "livro", "custo", "realizado", "patrimônio", "TWR", "XIRR", "benchmark"],
+      "code_roots": ["midas_core/domain/portfolio.py", "midas_core/domain/wealth.py", "midas_core/application/portfolio_ledger.py", "midas_core/application/wealth_dashboard.py", "midas_core/interfaces/http.py", "midas_core/application/analysis.py", "web/OperationsLedger.js", "web/WealthDashboard.js", "web/app.js"]
     },
     {
       "id": "quant-research",
