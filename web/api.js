@@ -65,6 +65,8 @@ export const getPortfolioPositions = ticker => request(
   `/api/portfolio/positions${ticker ? `?ticker=${encodeURIComponent(ticker)}` : ''}`
 );
 
+export const getWealthDashboard = () => request('/api/wealth/dashboard');
+
 export const createPortfolioOperation = payload => request('/api/portfolio/operations', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },

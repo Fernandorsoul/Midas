@@ -41,6 +41,8 @@ Este catálogo registra todos os arquivos relevantes de código, configuração,
 | `midas_core/application/market_quality.py` | Relatório de proveniência e frescor dos preços. |
 | `midas_core/domain/jobs.py` | Estados, transições e erro seguro de jobs. |
 | `midas_core/domain/market_quality.py` | Política de fontes, frescor e outcome de coleta. |
+| `midas_core/domain/wealth.py` | TWR, XIRR, alocação e rebase de benchmarks. |
+| `midas_core/application/wealth_dashboard.py` | Dashboard patrimonial e comparação com CDI/Ibovespa. |
 | `midas_core/worker.py` | Entrypoint do worker dedicado de jobs. |
 | `midas_core/application/market_import.py` | Importador brapi com validação, parsing e persistência. |
 | `midas_core/application/market_import_yahoo.py` | Importador Yahoo tolerante a falhas parciais. |
@@ -80,6 +82,7 @@ Este catálogo registra todos os arquivos relevantes de código, configuração,
 | `web/react.js` | Adaptador de imports React. |
 | `web/app.js` | Estado principal, carregamento paralelo, páginas e ações de carteira/treino. |
 | `web/OperationsLedger.js` | Formulário de operações, histórico e resumo de posição na carteira. |
+| `web/WealthDashboard.js` | Patrimônio, TWR/XIRR, alocação e gráficos de benchmarks. |
 | `web/api.js` | Cliente fetch e contratos das rotas HTTP. |
 | `web/layout.js` | Sidebar e navegação local. |
 | `web/AssetExplorer.js` | Filtros, tabela de ativos e favoritos. |
@@ -122,6 +125,7 @@ Este catálogo registra todos os arquivos relevantes de código, configuração,
 | `test_portfolio_ledger.py` | Caso de uso do livro, edição/exclusão controladas e resumo. |
 | `test_jobs.py` | Transições, worker, retry e recuperação de jobs. |
 | `test_market_quality.py` | Fontes, frescor, coleta parcial e fundamentos Yahoo. |
+| `test_wealth.py` | TWR, XIRR, alocação, rebase e dashboard patrimonial. |
 | `README.md` | Instalação, importação, treino, avisos de risco e comandos. |
 | `docs/architecture.md` | Camadas, fluxos e regras arquiteturais. |
 | `docs/data-model.md` | Modelo lógico, invariantes e ligação entre bancos. |

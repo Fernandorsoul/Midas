@@ -6,6 +6,7 @@ import { OperationsLedger } from './OperationsLedger.js';
 import { createRoot, React, useEffect, useMemo, useState } from './react.js';
 import { TrainingConsole } from './TrainingConsole.js';
 import { ValidationHistory } from './ValidationHistory.js';
+import { WealthDashboard } from './WealthDashboard.js';
 import { h, StatCard, Toast, nextToastId } from './ui.js';
 
 // Portfolio Manager Component
@@ -102,6 +103,7 @@ function PortfolioPage({ portfolio, loading, horizon, portfolioList, portfolioDa
       ),
     ),
     h(PortfolioManager, { portfolioList, portfolioData, onAdd, onRemove, loading }),
+    h(WealthDashboard),
     h(OperationsLedger),
     // Dividend Summary
     totalDividends > 0 ? h('div', { className: 'dividend-summary' },
