@@ -24,11 +24,17 @@ Interface React sem JSX, navegação, componentes, estilos e feedback do usuári
 
 ## Inconsistências que devem ser preservadas como limitações até correção
 
-- O estado inicial de horizonte é 6, mas o seletor de ativos só oferece 12, 24 e 36 meses.
-- A introdução e a página de método possuem texto fixo de 6 ou 12 meses, independentemente do horizonte ativo.
-- O cabeçalho afirma Yahoo Finance embora análise e treinamento também usem brapi e dados enriquecidos.
-- Erros ao adicionar/remover ou iniciar treino são enviados apenas ao console, sem feedback visual.
-- O menu é ocultado em telas pequenas, sem uma alternativa de navegação móvel.
+- Favoritar atualiza somente `assets` em memória; a página de carteira não é recarregada por essa ação.
+- Não há ordenação de colunas nem paginação no explorador.
+- Hashes mudam em links, mas não há roteamento completo por URL.
+
+## Fluxos corrigidos (issue #5)
+
+- Arquivos web salvos em UTF-8 válido (inclusive `style.css`, que tinha bytes Latin-1).
+- Toasts para sucesso/erro de carteira, importação e treino; status também visível na página.
+- Navegação móvel com botão hamburger, backdrop e `aside` deslizante; `aria-label`/`aria-expanded`.
+- Horizonte unificado: seletor inclui 6/12/24/36 e textos usam o horizonte ativo.
+- Cabeçalho informa fontes do pipeline (Yahoo Finance · brapi.dev).
 
 ## Regras de UX
 
@@ -40,7 +46,7 @@ Interface React sem JSX, navegação, componentes, estilos e feedback do usuári
 
 ## Atenção técnica
 
-Existem textos com codificação incorreta em arquivos web. Novos arquivos e correções devem usar UTF-8 corretamente.
+Novos arquivos e correções devem usar UTF-8 sem BOM. Verificar `style.css` após appends no Windows (PowerShell pode gravar Latin-1).
 
 ## Pontos de código
 

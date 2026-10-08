@@ -1,26 +1,51 @@
-import { React } from './react.js';
+import { React, useState } from './react.js';
 import { h } from './ui.js';
 
+const PAGES = [
+  { id: 'portfolio', label: 'Minha Carteira', icon: '◈' },
+  { id: 'assets', label: 'Todos os Ativos', icon: '◉' },
+  { id: 'training', label: 'Treinamento', icon: '↻' },
+  { id: 'validation', label: 'Validação', icon: '✓' },
+  { id: 'method', label: 'Método', icon: '⌁' },
+];
+
 export function Layout({ children, currentPage, onNavigate }) {
-  const pages = [
-    { id: 'portfolio', label: 'Minha Carteira', icon: '◈' },
-    { id: 'assets', label: 'Todos os Ativos', icon: '◉' },
-    { id: 'training', label: 'Treinamento', icon: '↻' },
-    { id: 'validation', label: 'Validação', icon: '✓' },
-    { id: 'method', label: 'Método', icon: '⌁' },
-  ];
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  function navigate(pageId) {
+    setMenuOpen(false);
+    onNavigate(pageId);
+  }
 
   return h(React.Fragment, null,
-    h('aside', null,
-      h('a', { className: 'brand', href: '/', onClick: (e) => { e.preventDefault(); onNavigate('portfolio'); } }, 'M', h('span', null, '✦'), ' MIDAS'),
+    h('button', {
+      type: 'button',
+      className: 'nav-toggle',
+      'aria-label': menuOpen ? 'Fechar menu' : 'Abrir menu',
+      'aria-expanded': menuOpen,
+      'aria-controls': 'primary-nav',
+      onClick: () => setMenuOpen(open => !open),
+    }, menuOpen ? '✕' : '☰'),
+    menuOpen ? h('div', {
+      className: 'nav-backdrop',
+      onClick: () => setMenuOpen(false),
+      'aria-hidden': 'true',
+    }) : null,
+    h('aside', { className: menuOpen ? 'nav-open' : '' },
+      h('a', {
+        className: 'brand',
+        href: '/',
+        onClick: (e) => { e.preventDefault(); navigate('portfolio'); },
+      }, 'M', h('span', null, '✦'), ' MIDAS'),
       h('div', { className: 'subtitle' }, 'INTELIGÊNCIA PATRIMONIAL'),
-      h('nav', null,
-        pages.map(page =>
+      h('nav', { id: 'primary-nav', 'aria-label': 'Navegação principal' },
+        PAGES.map(page =>
           h('a', {
             key: page.id,
             href: '#' + page.id,
             className: currentPage === page.id ? 'active' : '',
-            onClick: (e) => { e.preventDefault(); onNavigate(page.id); },
+            'aria-current': currentPage === page.id ? 'page' : undefined,
+            onClick: (e) => { e.preventDefault(); navigate(page.id); },
           }, page.icon + '   ' + page.label)
         ),
       ),

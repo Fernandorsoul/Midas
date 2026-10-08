@@ -6,7 +6,7 @@ import { OperationsLedger } from './OperationsLedger.js';
 import { createRoot, React, useEffect, useMemo, useState } from './react.js';
 import { TrainingConsole } from './TrainingConsole.js';
 import { ValidationHistory } from './ValidationHistory.js';
-import { h, StatCard } from './ui.js';
+import { h, StatCard, Toast, nextToastId } from './ui.js';
 
 // Portfolio Manager Component
 function PortfolioManager({ portfolioList, portfolioData, onAdd, onRemove, loading }) {
@@ -195,7 +195,7 @@ function AssetsPage({ assets, loading, horizon, setHorizon, status, setStatus, o
       h('div', null,
         h('div', { className: 'eyebrow' }, 'PRE\u00c7O, TEND\u00caNCIA E RISCO'),
         h('h1', null, 'Oportunidades com', h('br'), 'evid\u00eancia vis\u00edvel', h('span', null, '.')),
-        h('p', null, 'Treino temporal, previs\u00e3o de 6 meses e compara\u00e7\u00e3o', h('br'), 'com o retorno real observado posteriormente.'),
+        h('p', null, 'Treino temporal, previs\u00e3o de ' + horizon + ' meses e compara\u00e7\u00e3o', h('br'), 'com o retorno real observado posteriormente.'),
       ),
       h('div', { className: 'orbit', 'aria-hidden': 'true' }, h('span', null, '\u2726'), h('small', null, 'M\u00c9DIO & LONGO PRAZO')),
     ),
@@ -215,10 +215,10 @@ function TrainingPage({ horizon, job, setJob, onFinished }) {
 }
 
 // Validation Page
-function ValidationPage({ data }) {
+function ValidationPage({ data, horizon }) {
   return h(React.Fragment, null,
     h(ValidationHistory, { predictions: data?.metrics?.predictions || [] }),
-    h(EvaluationPanel, { data }),
+    h(EvaluationPanel, { data, horizon }),
   );
 }
 
@@ -236,6 +236,20 @@ function App() {
   const [status, setStatus] = useState('Consultando dados...');
   const [job, setJob] = useState({ status: 'idle', message: 'Nenhum treinamento em execu\u00e7\u00e3o.' });
   const [filters, setFilters] = useState({ query: '', category: '', sector: '', saved: false, candidates: false });
+
+  const [toasts, setToasts] = useState([]);
+
+  function notify(message, tone = 'info') {
+    const id = nextToastId();
+    setToasts(current => [...current, { id, message, tone }]);
+    if (tone !== 'error') {
+      setTimeout(() => setToasts(current => current.filter(item => item.id !== id)), 5000);
+    }
+  }
+
+  function dismissToast(id) {
+    setToasts(current => current.filter(item => item.id !== id));
+  }
 
   async function load() {
     setLoading(true);
@@ -261,7 +275,9 @@ function App() {
       setPortfolioList([]);
       setPortfolioData({});
       setDividends({});
-      setStatus('Falha ao acessar os bancos. Verifique os servi\u00e7os e recarregue.');
+      const message = 'Falha ao acessar os bancos. Verifique os serviços e recarregue.';
+      setStatus(message);
+      notify(message, 'error');
     } finally {
       setLoading(false);
     }
@@ -293,9 +309,12 @@ function App() {
             setPortfolioData(listData.portfolio || {});
             setPortfolio(portfolioResult);
             setStatus('');
+            notify(`${ticker} importado com sucesso.`, 'success');
           } else if (next.job.status === 'failed' || next.job.status === 'cancelled') {
             clearInterval(timer);
-            setStatus(next.job.error || 'Importação não concluída.');
+            const message = next.job.error || 'Importação não concluída.';
+            setStatus(message);
+            notify(message, 'error');
           }
         } catch {
           clearInterval(timer);
@@ -304,7 +323,9 @@ function App() {
       }, 1500);
     } catch (error) {
       console.error('Erro ao adicionar ativo:', error);
-      setStatus(error.message || 'Falha ao enfileirar importação.');
+      const message = error.message || 'Falha ao enfileirar importação.';
+      setStatus(message);
+      notify(message, 'error');
     }
   }
 
@@ -315,8 +336,11 @@ function App() {
       setPortfolioData(result.portfolio || {});
       const portfolioResult = await getPortfolio(horizon);
       setPortfolio(portfolioResult);
+      notify(`${ticker} removido da carteira.`, 'success');
     } catch (error) {
       console.error('Erro ao remover ativo:', error);
+      const message = error.message || 'Falha ao remover ativo.';
+      notify(message, 'error');
     }
   }
 
@@ -324,6 +348,7 @@ function App() {
     try {
       const result = await startTraining(trainHorizon);
       setJob(result);
+      notify('Treinamento enfileirado.', 'success');
       const jobId = result.id;
       const timer = setInterval(async () => {
         try {
@@ -333,8 +358,10 @@ function App() {
             clearInterval(timer);
             const portfolioResult = await getPortfolio(horizon);
             setPortfolio(portfolioResult);
+            notify('Treinamento concluído.', 'success');
           } else if (next.status === 'failed' || next.status === 'cancelled') {
             clearInterval(timer);
+            notify(next.error || 'Treinamento não concluído.', 'error');
           }
         } catch {
           clearInterval(timer);
@@ -342,6 +369,7 @@ function App() {
       }, 2000);
     } catch (error) {
       console.error('Erro ao iniciar treinamento:', error);
+      notify(error.message || 'Falha ao iniciar treinamento.', 'error');
     }
   }
 
@@ -354,9 +382,9 @@ function App() {
       case 'training':
         return h(TrainingPage, { horizon, job, setJob, onFinished: load });
       case 'validation':
-        return h(ValidationPage, { data });
+        return h(ValidationPage, { data, horizon });
       case 'method':
-        return h(EvaluationPanel, { data });
+        return h(EvaluationPanel, { data, horizon });
       default:
         return h(PortfolioPage, { portfolio, loading, horizon, portfolioList, portfolioData, onAdd: handleAddTicker, onRemove: handleRemoveTicker, onTrain: handleTrainPortfolio, job });
     }
@@ -364,13 +392,15 @@ function App() {
 
   return h(Layout, { currentPage, onNavigate: setCurrentPage },
     h('header', null, 
-      h('span', null, 'Seu observat\u00f3rio de investimentos'), 
+      h('span', null, 'Seu observatório de investimentos'), 
       h('div', { className: 'header-actions' },
-        h('span', { className: 'pill' }, '\u25cf Dados Yahoo Finance'),
+        h('span', { className: 'pill', title: 'Fontes de mercado usadas no pipeline principal' }, '● Yahoo Finance · brapi.dev'),
       ),
     ),
+    status ? h('div', { className: 'notice', role: 'status' }, status) : null,
     renderPage(),
-    h('footer', null, 'MIDAS ', h('span', null, 'Pesquisa antes da decis\u00e3o. Paci\u00eancia antes do resultado.')),
+    h(Toast, { toasts, onDismiss: dismissToast }),
+    h('footer', null, 'MIDAS ', h('span', null, 'Pesquisa antes da decisão. Paciência antes do resultado.')),
   );
 }
 
