@@ -41,6 +41,7 @@ Este catálogo registra todos os arquivos relevantes de código, configuração,
 | `midas_core/application/market_quality.py` | Relatório de proveniência e frescor dos preços. |
 | `midas_core/domain/jobs.py` | Estados, transições e erro seguro de jobs. |
 | `midas_core/domain/market_quality.py` | Política de fontes, frescor e outcome de coleta. |
+| `midas_core/domain/model_artifacts.py` | Contrato versionado de artefatos e explicação de fatores. |
 | `midas_core/domain/wealth.py` | TWR, XIRR, alocação e rebase de benchmarks. |
 | `midas_core/application/wealth_dashboard.py` | Dashboard patrimonial e comparação com CDI/Ibovespa. |
 | `midas_core/worker.py` | Entrypoint do worker dedicado de jobs. |
@@ -53,7 +54,7 @@ Este catálogo registra todos os arquivos relevantes de código, configuração,
 | Arquivo | Papel |
 |---|---|
 | `midas_core/infrastructure/brapi.py` | Cliente HTTP brapi v2, ticker seguro, retries de rede/429 e token Bearer. |
-| `midas_core/infrastructure/yahoo.py` | Histórico, dividendos e fundamentos Yahoo. Há código de fundamentos pontuais inalcançável após retorno de dividendos; `fetch_fundamentals` não é função pública disponível. |
+| `midas_core/infrastructure/yahoo.py` | Histórico, dividendos e fundamentos Yahoo (`fetch_fundamentals` pontual e `fetch_historical_fundamentals`). |
 | `midas_core/infrastructure/enrichment.py` | Enriquecimento experimental com Yahoo, brapi e Alpha Vantage; mescla por data e preço. Chama `fetch_fundamentals` inexistente somente dentro de bloco protegido, portanto cai em fallback de nome. |
 | `midas_core/infrastructure/macro.py` | Consulta séries BCB (Selic, IPCA, dólar e desemprego) com cache local de 24h; as features macro não estão ligadas ao vetor atual. |
 | `midas_core/infrastructure/database.py` | Fábricas psycopg e MongoClient. |
@@ -125,6 +126,7 @@ Este catálogo registra todos os arquivos relevantes de código, configuração,
 | `test_portfolio_ledger.py` | Caso de uso do livro, edição/exclusão controladas e resumo. |
 | `test_jobs.py` | Transições, worker, retry e recuperação de jobs. |
 | `test_market_quality.py` | Fontes, frescor, coleta parcial e fundamentos Yahoo. |
+| `test_model_artifacts.py` | Serialização, ensemble e bloqueio de run não serializável. |
 | `test_wealth.py` | TWR, XIRR, alocação, rebase e dashboard patrimonial. |
 | `README.md` | Instalação, importação, treino, avisos de risco e comandos. |
 | `docs/architecture.md` | Camadas, fluxos e regras arquiteturais. |
