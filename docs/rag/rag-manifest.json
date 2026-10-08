@@ -40,8 +40,8 @@
     {
       "id": "api-jobs",
       "path": "06-api-jobs.md",
-      "keywords": ["API", "endpoint", "rota", "HTTP", "JSON", "job", "fila", "erro", "status"],
-      "code_roots": ["midas_core/interfaces/http.py", "web/api.js"]
+      "keywords": ["API", "endpoint", "rota", "HTTP", "JSON", "job", "fila", "erro", "status", "worker", "treinamento", "importação"],
+      "code_roots": ["midas_core/interfaces/http.py", "midas_core/application/jobs.py", "midas_core/domain/jobs.py", "midas_core/worker.py", "web/api.js"]
     },
     {
       "id": "storage-security",
@@ -59,7 +59,7 @@
       "id": "quality",
       "path": "09-quality.md",
       "keywords": ["teste", "bug", "qualidade", "aceite", "regressão", "monitoramento"],
-      "code_roots": ["test_analysis.py", "test_http.py", "test_market_api.py", "test_midas.py", "test_portfolio.py", "test_portfolio_ledger.py"]
+      "code_roots": ["test_analysis.py", "test_http.py", "test_market_api.py", "test_midas.py", "test_portfolio.py", "test_portfolio_ledger.py", "test_jobs.py"]
     },
     {
       "id": "codebase-catalog",

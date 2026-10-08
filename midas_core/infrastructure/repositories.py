@@ -278,6 +278,132 @@ class PostgresRepository:
                 (ticker,),
             ).fetchone()
 
+    # --- Jobs persistidos ---
+
+    def insert_job(self, job_type, payload, step="queued"):
+        with self._connector() as connection:
+            connection.execute("SELECT pg_advisory_xact_lock(741211)")
+            active = connection.execute(
+                """SELECT job_type FROM jobs
+                   WHERE status IN ('queued','running')
+                   FOR UPDATE""",
+            ).fetchall()
+            active_types = {row["job_type"] for row in active}
+            if job_type == "training" and "training" in active_types:
+                raise ValueError("Já existe um treinamento na fila ou em execução.")
+            return connection.execute(
+                """INSERT INTO jobs(job_type,status,step,payload)
+                   VALUES (%s,'queued',%s,%s)
+                   RETURNING id,job_type,status,step,payload,result,progress,error,
+                             cancel_requested,created_at,started_at,finished_at,updated_at""",
+                (job_type, step, Jsonb(payload)),
+            ).fetchone()
+
+    def list_jobs(self, job_type=None, limit=20):
+        with self._connector() as connection:
+            if job_type:
+                return connection.execute(
+                    """SELECT id,job_type,status,step,payload,result,progress,error,
+                              cancel_requested,created_at,started_at,finished_at,updated_at
+                       FROM jobs WHERE job_type=%s
+                       ORDER BY created_at DESC,id DESC LIMIT %s""",
+                    (job_type, limit),
+                ).fetchall()
+            return connection.execute(
+                """SELECT id,job_type,status,step,payload,result,progress,error,
+                          cancel_requested,created_at,started_at,finished_at,updated_at
+                   FROM jobs ORDER BY created_at DESC,id DESC LIMIT %s""",
+                (limit,),
+            ).fetchall()
+
+    def get_job(self, job_id):
+        with self._connector() as connection:
+            return connection.execute(
+                """SELECT id,job_type,status,step,payload,result,progress,error,
+                          cancel_requested,created_at,started_at,finished_at,updated_at
+                   FROM jobs WHERE id=%s""",
+                (job_id,),
+            ).fetchone()
+
+    def claim_next_job(self):
+        """Reivindica o próximo job queued de forma segura entre workers."""
+        with self._connector() as connection:
+            row = connection.execute(
+                """UPDATE jobs SET status='running', started_at=now(), updated_at=now()
+                   WHERE id = (
+                     SELECT id FROM jobs
+                     WHERE status='queued' AND NOT cancel_requested
+                     ORDER BY created_at,id
+                     FOR UPDATE SKIP LOCKED
+                     LIMIT 1
+                   )
+                   RETURNING id,job_type,status,step,payload,result,progress,error,
+                             cancel_requested,created_at,started_at,finished_at,updated_at""",
+            ).fetchone()
+            return row
+
+    def update_job_progress(self, job_id, step, progress, result=None):
+        with self._connector() as connection:
+            return connection.execute(
+                """UPDATE jobs SET step=%s, progress=%s,
+                       result=COALESCE(%s, result), updated_at=now()
+                   WHERE id=%s AND status='running'
+                   RETURNING id,job_type,status,step,payload,result,progress,error,
+                             cancel_requested,created_at,started_at,finished_at,updated_at""",
+                (step, progress, Jsonb(result) if result is not None else None, job_id),
+            ).fetchone()
+
+    def finish_job(self, job_id, status, result=None, error=None):
+        with self._connector() as connection:
+            return connection.execute(
+                """UPDATE jobs SET status=%s, step=%s, progress=CASE WHEN %s='succeeded' THEN 100 ELSE progress END,
+                       result=COALESCE(%s, result), error=%s,
+                       finished_at=now(), updated_at=now()
+                   WHERE id=%s AND status IN ('running','queued')
+                   RETURNING id,job_type,status,step,payload,result,progress,error,
+                             cancel_requested,created_at,started_at,finished_at,updated_at""",
+                (
+                    status,
+                    "done" if status == "succeeded" else ("failed" if status == "failed" else "cancelled"),
+                    status,
+                    Jsonb(result) if result is not None else None,
+                    error,
+                    job_id,
+                ),
+            ).fetchone()
+
+    def request_job_cancel(self, job_id):
+        """Cancela queued imediatamente; running marca cancel_requested."""
+        with self._connector() as connection:
+            row = connection.execute(
+                """UPDATE jobs SET
+                       status=CASE WHEN status='queued' THEN 'cancelled' ELSE status END,
+                       finished_at=CASE WHEN status='queued' THEN now() ELSE finished_at END,
+                       cancel_requested=true,
+                       step=CASE WHEN status='queued' THEN 'cancelled' ELSE step END,
+                       updated_at=now()
+                   WHERE id=%s AND status IN ('queued','running')
+                   RETURNING id,job_type,status,step,payload,result,progress,error,
+                             cancel_requested,created_at,started_at,finished_at,updated_at""",
+                (job_id,),
+            ).fetchone()
+            return row
+
+    def requeue_interrupted_jobs(self):
+        """Reenfileira jobs running órfãos após reinício do worker.
+
+        Executado uma vez no start, sob lock consultivo, para que um job
+        interrompido por crash/reinício não fique preso em running.
+        """
+        with self._connector() as connection:
+            connection.execute("SELECT pg_advisory_xact_lock(741212)")
+            return connection.execute(
+                """UPDATE jobs SET status='queued', step='queued', progress=0,
+                       started_at=NULL, error=NULL, updated_at=now()
+                   WHERE status='running'
+                   RETURNING id""",
+            ).fetchall()
+
 class MongoRepository:
     def __init__(self, connector=connect_mongo):
         self._connector = connector

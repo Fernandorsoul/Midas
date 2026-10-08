@@ -20,7 +20,7 @@ Interface React sem JSX, navegação, componentes, estilos e feedback do usuári
 - O explorador permite busca por ticker/nome, categoria, setor, candidatos e favoritos; não há ordenação de colunas nem paginação.
 - Favoritar atualiza somente `assets` em memória; a página de carteira não é recarregada por essa ação.
 - A tela de validação renderiza as previsões que vêm nas métricas do relatório de análise para o horizonte ativo.
-- Treinamento possui dois pollers independentes: 1,2 s no console e 2 s no botão da carteira.
+- Treinamento e importação usam jobs persistidos: a UI não bloqueia, faz polling resiliente por `job_id`, mostra progresso e oferece cancelar/reexecutar.
 
 ## Inconsistências que devem ser preservadas como limitações até correção
 
@@ -47,6 +47,7 @@ Existem textos com codificação incorreta em arquivos web. Novos arquivos e cor
 - `web/app.js`
 - `web/AssetExplorer.js`
 - `web/OperationsLedger.js`
+- `web/TrainingConsole.js`
 - `web/layout.js`
 - `web/ui.js`
 - `web/api.js`

@@ -19,6 +19,7 @@ PostgreSQL, MongoDB, segredos, isolamento de dados e controles de acesso.
 - `model_runs` armazena métricas e parâmetros em JSONB; a ligação com o dataset MongoDB é lógica, não transacional.
 - `portfolios` e `portfolio_assets` persistem a lista de ativos e quantidade; a migração `001-persistent-portfolio.sql` é necessária para bancos já existentes.
 - `portfolio_operations` persiste o livro razão (compra, venda, aporte, retirada, dividendo, JCP, taxa, imposto) com moeda, datas e invariantes de quantidade/valor; migração `002-portfolio-operations.sql`.
+- `jobs` persiste treinamento e importação (tipo, status, etapa, payload, resultado, progresso, erro seguro, cancelamento); migração `003-jobs.sql`. Índice parcial impede dois treinos ativos.
 - MongoDB valida as coleções `datasets`, `training_samples` e `model_artifacts`; amostras têm índice único por dataset, ticker, data e horizonte.
 - Ao publicar um dataset, a aplicação tenta compensar uma falha de inserção de amostras removendo dataset e amostras do MongoDB. Não há transação entre MongoDB e PostgreSQL.
 - Favoritos usam lock transacional consultivo PostgreSQL para evitar corrida na criação da watchlist compartilhada.
@@ -43,6 +44,7 @@ PostgreSQL, MongoDB, segredos, isolamento de dados e controles de acesso.
 - `midas_core/infrastructure/database.py`
 - `midas_core/infrastructure/repositories.py`
 - `infra/postgres/migrations/002-portfolio-operations.sql`
+- `infra/postgres/migrations/003-jobs.sql`
 - `midas_core/config.py`
 - `compose.yaml`
 - `infra/rag-postgres/01-init.sql`

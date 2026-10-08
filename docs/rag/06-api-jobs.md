@@ -11,7 +11,7 @@ Contratos HTTP locais, validação de entrada, status de tarefas e tratamento de
 | `GET /api/analysis?horizon=` | Ranking e métricas do modelo |
 | `GET /api/portfolio?horizon=` | Relatório da carteira atual |
 | `GET /api/portfolio/list` | Tickers e quantidades persistidos |
-| `POST /api/portfolio/add` | Adiciona/atualiza ticker e importa dados |
+| `POST /api/portfolio/add` | Enfileira job de importação (202) |
 | `POST /api/portfolio/remove` | Remove ticker da lista |
 | `GET /api/portfolio/dividends` | Consulta dividendos atuais |
 | `GET /api/portfolio/operations` | Histórico do livro de operações |
@@ -20,32 +20,46 @@ Contratos HTTP locais, validação de entrada, status de tarefas e tratamento de
 | `POST /api/portfolio/operations/delete` | Exclui operação revalidando o livro |
 | `GET /api/portfolio/positions` | Posição, custo, P&L e retorno total |
 | `PUT /api/favorites` | Altera favorito |
-| `POST /api/training` | Enfileira treinamento em thread |
-| `GET /api/training/status` | Estado em memória do treinamento |
+| `POST /api/training` | Enfileira job de treinamento (202) |
+| `GET /api/training/status` | Último job de treino persistido |
+| `GET /api/jobs` | Lista jobs (`?type=`, `?limit=`) |
+| `GET /api/jobs?job_id=` | Consulta um job |
+| `POST /api/jobs` | Cria job `training` ou `import` (202) |
+| `POST /api/jobs/cancel` | Cancela job queued/running |
+| `POST /api/jobs/retry` | Reexecuta job failed/cancelled (202) |
 
-## Limitações atuais
+## Jobs persistidos
 
-Status de treinamento e tarefas não sobrevivem a reinício. O processamento em threads serve ao protótipo, mas deve evoluir para jobs persistidos e worker separado. A carteira padrão já sobrevive a reinícios no PostgreSQL.
+- Estados: `queued` → `running` → `succeeded` | `failed` | `cancelled`.
+- Tipos: `training` e `import`. Payload mínimo no JSONB; resultado em `result`.
+- Um único treinamento ativo (fila ou execução) — índice parcial único; segundo pedido recebe 409.
+- Importações concorrentes de tickers diferentes são permitidas.
+- `cancel_requested` marca running; o worker interrompe no próximo checkpoint.
+- `retry` cria um novo job a partir do payload do original.
+- Erros persistidos são mensagens seguras (`safe_error_message`), sem stack/token.
+
+## Worker
+
+- `midas_core/worker.py` (serviço `worker` no compose) e thread embutida no `run_server`.
+- Reivindicação com `FOR UPDATE SKIP LOCKED` — vários workers não duplicam execução.
+- No start, jobs `running` órfãos são reenfileirados (`requeue_interrupted_jobs`).
+- Passos de progresso: treino `dataset`/`training`; importação `import`/`portfolio`.
 
 ## Comportamento confirmado
 
 - Respostas JSON usam `Cache-Control: no-store`; payloads mutáveis exigem JSON com até 4 KiB.
 - Rotas mutáveis comparam o cabeçalho `Origin` com o próprio `Host`; origem diferente recebe 403.
-- Treinamento aceita somente 6, 12, 24 ou 36 meses, rejeita treino concorrente com 409 e atualiza `TRAINING_JOB` protegido por lock.
-- O job percorre os passos `queued`, `dataset`, `training`, `done` ou `failed`; o erro é mantido no estado em memória.
-- Ao iniciar treino pela interface, a presença de carteira filtra os tickers do dataset; sem carteira, usa todo o universo.
-- `POST /api/portfolio/add` importa o ticker no Yahoo de forma síncrona e persiste a posição somente após o sucesso da importação.
-- `GET /api/portfolio/list`, `POST /api/portfolio/remove` e `GET /api/portfolio/dividends` leem as posições persistidas; indisponibilidade do PostgreSQL retorna 503 nas rotas HTTP.
-- Dividendos são consultados sequencialmente no Yahoo a cada `GET /api/portfolio/dividends`; falhas do provedor são retornadas por ticker em vez de falhar a resposta completa.
-- Operações validam tipo, data, moeda, ticker e valores; venda acima da posição retorna 400 e não persiste.
-- Edição (`PUT`) exige `id`, tipo e data e revalida o livro do ativo (inclusive se o ticker mudar).
-- Exclusão revalida o livro restante; se restar venda inválida, retorna 400.
-- `GET /api/portfolio/positions` aceita `?ticker=` opcional e devolve posições, totais, data/fonte de mercado quando existirem.
+- `POST /api/training` aceita 6, 12, 24 ou 36 meses; concorrência retorna 409 com mensagem segura.
+- Job persiste no PostgreSQL e é consultável após reinício da aplicação.
+- `POST /api/portfolio/add` não bloqueia: devolve 202 com job; a UI acompanha por polling.
+- Operações de carteira validam tipo, data, moeda, ticker e valores; venda acima da posição retorna 400.
+- Indisponibilidade do PostgreSQL retorna 503 nas rotas HTTP.
 
 ## Pontos de entrada auxiliares
 
-- `midas.py` apenas inicia o servidor HTTP.
-- `midas_core/interfaces/cli.py` oferece importação brapi/Yahoo, publicação de dataset e treino de snapshot por linha de comando.
+- `midas.py` inicia o servidor HTTP (com worker embutido).
+- `midas_core/worker.py` executa apenas o worker dedicado.
+- `midas_core/interfaces/cli.py` oferece importação brapi/Yahoo, dataset e treino por CLI.
 
 ## Regras
 
@@ -57,5 +71,10 @@ Status de treinamento e tarefas não sobrevivem a reinício. O processamento em 
 ## Pontos de código
 
 - `midas_core/interfaces/http.py`
+- `midas_core/application/jobs.py`
+- `midas_core/domain/jobs.py`
+- `midas_core/worker.py`
 - `web/api.js`
+- `web/TrainingConsole.js`
 - `test_http.py`
+- `test_jobs.py`
