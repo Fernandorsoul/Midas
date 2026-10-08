@@ -2,6 +2,7 @@
 import numpy as np
 
 from midas_core.domain.features import SUPPORTED_HORIZONS, latest_features, month_end_series
+from midas_core.domain.market_quality import PriceMetadata, assert_consistent_series, describe_price, resolve_price_source
 from midas_core.domain.regression import from_artifact, predict
 from midas_core.infrastructure.repositories import MongoRepository, PostgresRepository
 from midas_core.infrastructure.yahoo import fetch_historical_fundamentals, YahooFinanceError
@@ -33,11 +34,27 @@ def build_report(horizon, mongo_repository=None, postgres_repository=None):
     assets = postgres_repository.assets_with_prices()
     for asset in assets:
         prices = asset.pop("prices")
+        sources = [price["source"] for price in prices]
+        series_source = assert_consistent_series(sources) or resolve_price_source(sources)
+        last = prices[-1] if prices else None
+        metadata = None
+        if last is not None:
+            metadata = PriceMetadata(
+                source=last["source"],
+                price_date=last["price_date"],
+                ingested_at=last.get("ingested_at"),
+                close=float(last["close"]) if last.get("close") is not None else None,
+                adjusted_close=float(last["adjusted_close"]) if last.get("adjusted_close") is not None else None,
+            )
+        market_data = describe_price(metadata)
+        market_data["series_source"] = series_source
+        market_data["series_points"] = len(prices)
+        asset["market_data"] = market_data
+        # Exibição usa fechamento; treino usa ajustado quando existe.
         asset["chart"] = [float(price["close"]) for price in prices[-756:]]
-        asset["price"] = float(prices[-1]["close"]) if prices else None
-        asset["price_date"] = prices[-1]["price_date"].isoformat() if prices else None
-        asset["source"] = prices[-1]["source"] if prices else None
-        # Não buscar fundamentos por padrão (muito lento)
+        asset["price"] = market_data["close"]
+        asset["price_date"] = market_data["price_date"]
+        asset["source"] = market_data["source"]
         asset["_features"] = latest_features(month_end_series(prices))
 
     metrics = artifact = run_date = None
@@ -122,6 +139,7 @@ def build_portfolio_report(horizon, portfolio_tickers=None, mongo_repository=Non
                 "price": None,
                 "price_date": None,
                 "source": None,
+                "market_data": describe_price(None),
                 "opportunity": None,
                 "status": "Sem dados - adicione via Yahoo Finance",
             })

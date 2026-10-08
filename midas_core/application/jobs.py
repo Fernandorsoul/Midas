@@ -270,6 +270,12 @@ class JobWorker:
             "ticker": ticker,
             "prices": price_count,
             "status": "imported",
+            "source": SOURCE,
+            "collection": {
+                "status": "succeeded",
+                "imported": 1,
+                "failed": 0,
+            },
         }
         if add_to_portfolio:
             self._progress(job, "portfolio", 70, result)

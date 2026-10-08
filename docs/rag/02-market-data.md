@@ -7,9 +7,22 @@ Cadastro de ativos, histórico diário de preços, fontes externas e importaçã
 ## Estado atual
 
 - PostgreSQL armazena ativos e preços diários.
-- `brapi.dev` e Yahoo Finance são fontes usadas pelo projeto.
-- O relatório escolhe a fonte mais recente disponível por ativo para exibição.
-- Preço mostrado no painel é fechamento diário; treinamento prioriza fechamento ajustado.
+- Fontes oficiais: `yahoo.finance` (primária) e `brapi.dev` (fallback) para preços.
+- Dividendos e fundamentos pontuais: `yahoo.finance`.
+- `enriched` e `macro` permanecem **experimentais e fora do pipeline principal**.
+- Cada ticker exibe uma série de **fonte única**; a seleção prefere fonte oficial à experimental e, na mesma classe, a mais recente.
+
+## Política de fontes
+
+| Dado | Primária | Fallback | Experimental |
+|---|---|---|---|
+| Preços | `yahoo.finance` | `brapi.dev` | `enriched` |
+| Dividendos | `yahoo.finance` | — | — |
+| Fundamentos | `yahoo.finance` | — | `enriched` |
+
+- Código: `midas_core/domain/market_quality.py` (`SOURCE_POLICY`, `resolve_price_source`).
+- Relatório e `GET /api/market/quality` expõem `source`, `price_date`, `ingested_at`, `age_days`, `stale`, `quality`, `display_price_field` e `training_price_field`.
+- Exibição usa `close`; treino usa `adjusted_close` quando existe (senão `close`).
 
 ## Fluxo de importação confirmado
 
@@ -19,16 +32,20 @@ Cadastro de ativos, histórico diário de preços, fontes externas e importaçã
 4. Yahoo normaliza tickers brasileiros com o sufixo `.SA`, baixa histórico sem ajuste automático e preserva `Close`, `Adj Close` e volume quando válidos.
 5. `PostgresRepository.save_stocks` cria/atualiza o ativo e faz upsert por `(asset_id, price_date, source)`.
 
+## Resultado de coleta (não mascarar falha)
+
+`collection_outcome` produz `succeeded` / `partial` / `failed` com contagens. Importação parcial nunca é sucesso; falha integral não persiste. Jobs de importação registram `collection` no resultado.
+
 ## Seleção de preços para análise
 
-`assets_with_prices()` seleciona, para cada ativo, a fonte cujo registro mais recente possui a maior combinação de `price_date`, `ingested_at` e nome da fonte; então devolve até 1.260 pregões dessa mesma fonte, em ordem cronológica. Portanto, a fonte pode variar por ativo, mas não dentro da série exibida.
+`assets_with_prices()` escolhe a fonte da série com preferência oficial sobre experimental e recência dentro da classe; devolve até 1.260 pregões **dessa mesma fonte**, em ordem cronológica. A fonte pode variar por ativo, mas não dentro da série exibida.
 
 ## Falhas e cuidados conhecidos
 
 - A brapi tenta novamente falhas de rede/timeout e HTTP 429 com backoff exponencial; erros 401/403 indicam token ausente ou sem acesso.
-- A importação Yahoo continua os demais tickers se um falhar e devolve `warnings`; falha integralmente se nenhum ativo puder ser importado.
+- A importação Yahoo continua os demais tickers se um falhar e devolve `warnings` + `collection.partial`; falha integralmente se nenhum ativo puder ser importado.
 - Dividendos consultados pelo Yahoo são dados correntes de 12 meses, não eventos persistidos.
-- `yahoo.py` contém lógica de fundamentos após o retorno de `fetch_dividends`; ela está inalcançável e não há uma função pública `fetch_fundamentals` definida. Não assumir que fundamentos pontuais estejam disponíveis até esse defeito ser corrigido.
+- `fetch_fundamentals` existe e devolve `FundamentalData` pontual; `fetch_historical_fundamentals` segue disponível para o enriquecimento.
 
 ## Regras importantes
 
@@ -39,13 +56,12 @@ Cadastro de ativos, histórico diário de preços, fontes externas e importaçã
 
 ## Pontos de código
 
+- `midas_core/domain/market_quality.py`
+- `midas_core/application/market_quality.py`
 - `midas_core/infrastructure/brapi.py`
 - `midas_core/infrastructure/yahoo.py`
 - `midas_core/application/market_import.py`
 - `midas_core/application/market_import_yahoo.py`
 - `midas_core/infrastructure/repositories.py`
 - `midas_core/application/analysis.py`
-
-## Evolução desejada
-
-Definir fonte primária/fallback por tipo de dado e persistir metadados de coleta, qualidade e atraso.
+- `test_market_quality.py`

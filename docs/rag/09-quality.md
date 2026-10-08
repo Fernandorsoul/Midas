@@ -27,6 +27,11 @@ Há testes de regras de análise, HTTP, importação e treinamento. Endpoints b�
 - `test_jobs.py` cobre transições, erro seguro, enfileiramento, unicidade de treino, worker (sucesso/falha/cancelamento), retry e recuperação de running interrompido.
 - `test_http.py` cobre rotas de jobs, treino (202/400/409), import enfileirada (202) e status persistido.
 
+## Cobertura de dados de mercado
+
+- `test_market_quality.py` cobre política de fontes/fallback, série consistente, frescor/stale, distinção close vs adjusted_close, outcome de coleta (sucesso/parcial/falha) e disponibilidade de `fetch_fundamentals`.
+- `test_market_api.py` cobre normalização, resposta parcial da brapi e persistência de preço ajustado.
+
 ## Critérios de aceite transversais
 
 - Não perder dados de usuário ao reiniciar.
@@ -49,3 +54,4 @@ Há testes de regras de análise, HTTP, importação e treinamento. Endpoints b�
 - `test_portfolio.py`
 - `test_portfolio_ledger.py`
 - `test_jobs.py`
+- `test_market_quality.py`
