@@ -10,6 +10,7 @@ Midas é uma aplicação local de pesquisa e acompanhamento de investimentos bra
 - Não oferece recomendação financeira individual.
 - Estimativas do modelo não são garantias de retorno.
 - Dados podem ter atraso, lacunas ou diferenças entre fontes.
+- O screener de oportunidade é triagem de pesquisa (score por critérios explícitos + disclaimer), não sinal de compra/venda.
 
 ## Linguagem esperada
 

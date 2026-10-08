@@ -21,6 +21,7 @@ Contratos HTTP locais, validação de entrada, status de tarefas e tratamento de
 | `GET /api/portfolio/positions` | Posição, custo, P&L e retorno total |
 | `GET /api/market/quality` | Proveniência, frescor e política de fontes |
 | `GET /api/wealth/dashboard` | Patrimônio, TWR/XIRR, alocação e benchmarks |
+| `GET /api/screener` | Triagem de oportunidades com score explicado |
 | `POST /api/auth/register` | Cria usuário (201) |
 | `POST /api/auth/login` | Login e token de sessão |
 | `POST /api/auth/logout` | Encerra sessão |

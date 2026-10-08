@@ -129,6 +129,16 @@ export const getPortfolioPositions = ticker => request(
 
 export const getWealthDashboard = () => request('/api/wealth/dashboard');
 
+export const getScreener = (params = {}) => {
+  const qs = new URLSearchParams();
+  if (params.query) qs.set('query', params.query);
+  if (params.category) qs.set('category', params.category);
+  if (params.min_volume) qs.set('min_volume', String(params.min_volume));
+  if (params.limit) qs.set('limit', String(params.limit));
+  const suffix = qs.toString() ? `?${qs}` : '';
+  return request(`/api/screener${suffix}`);
+};
+
 export const createPortfolioOperation = payload => request('/api/portfolio/operations', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },

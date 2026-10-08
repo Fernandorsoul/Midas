@@ -4,6 +4,7 @@ import { h } from './ui.js';
 const PAGES = [
   { id: 'portfolio', label: 'Minha Carteira', icon: '◈' },
   { id: 'assets', label: 'Todos os Ativos', icon: '◉' },
+  { id: 'screener', label: 'Screener', icon: '◐' },
   { id: 'training', label: 'Treinamento', icon: '↻' },
   { id: 'validation', label: 'Validação', icon: '✓' },
   { id: 'method', label: 'Método', icon: '⌁' },

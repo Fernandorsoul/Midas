@@ -57,6 +57,10 @@ Há testes de regras de análise, HTTP, importação e treinamento. Endpoints b�
 
 - `test_rag.py` cobre embedding `local-hash-256`, similaridade, score híbrido, limite de 3 chunks com fonte e filtro por módulo.
 
+## Cobertura do screener
+
+- `test_screener.py` cobre critérios (momento, drawdown, volatilidade, qualidade), score composto, explicação/disclaimer, filtros e ordenação.
+
 ## Critérios de aceite transversais
 
 - Não perder dados de usuário ao reiniciar.
@@ -86,3 +90,4 @@ Há testes de regras de análise, HTTP, importação e treinamento. Endpoints b�
 - `test_migrations.py`
 - `test_rag.py`
 - `test_market_fallback.py`
+- `test_screener.py`
