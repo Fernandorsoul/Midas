@@ -54,6 +54,29 @@ Cadastro de ativos, histórico diário de preços, fontes externas e importaçã
 - Não esconder erro de importação como se fosse atualização concluída.
 - Antes de alterar fonte ou regra de prioridade, verificar impacto no dataset de treinamento.
 
+## Alternativas gratuitas avaliadas (2026-10)
+
+| Fonte | Custo | Dados B3 | Limites free | Papel no Midas |
+|---|---|---|---|---|
+| `yahoo.finance` (`yfinance`) | Free (não oficial) | Ações/FIIs com sufixo `.SA`; dividendos | Não documentado; throttle possível | **Primária de preços** |
+| `brapi.dev` | Free + planos | Nativo: ações, FIIs, opções, TD, macro, câmbio, cripto | Key free com quota; sem key só `PETR4`/`VALE3`/`MGLU3`/`ITUB4`; 429 com `Retry-After` | **Fallback de preços** |
+| BCB SGS (`api.bcb.gov.br`) | Free oficial | Macro (CDI, SELIC, IPCA) — não equities | Sem key | Benchmarks/macro |
+| Alpha Vantage | Free key | Global; B3 inconsistente | ~25 req/dia; `outputsize=full` premium | Experimental (fundamentos) |
+| Finnhub / Twelve Data / Marketstack | Free tier | B3 pobre ou ausente | 5–25 req/min, dezenas/dia | Não adotar para B3 |
+
+### Decisão
+
+- **Não trocar a brapi** agora: é a única free com FIIs, Tesouro Direto e macro brasileira de qualidade.
+- Manter Yahoo primário + brapi fallback (política `SOURCE_POLICY`).
+- BCB permanece para CDI/SELIC/IPCA (wealth/benchmarks).
+- Não existe substituto gratuito **oficial** da B3 para cotações; dados em tempo real são pagos.
+
+### Pontos de atenção
+
+- Yahoo pode throttle/bloquear sem aviso — o fallback brapi e o outcome `partial` cobrem isso.
+- Alpha Vantage não cobre B3 de forma confiável; não virar fonte principal.
+- Qualquer nova fonte precisa de `source`/`price_date` e entrada em `SOURCE_POLICY` + testes de fallback.
+
 ## Pontos de código
 
 - `midas_core/domain/market_quality.py`
